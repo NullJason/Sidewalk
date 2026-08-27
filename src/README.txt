@@ -5,50 +5,34 @@ Two-page Vite + TypeScript frontend for the Sidewalk weekend planner.
 ## Run
 
 ```bash
-npm install
-npm run dev
+npm install     # one install at the repo root covers frontend and server
+npm run server  # Express on http://localhost:3000
+npm run dev     # Vite; open the URL it prints
 ```
 
-Then open the Vite development URL.
+`vite.config.ts` proxies `/api/*` to the Express server, so the browser stays on
+Vite's origin and there is no CORS to configure.
 
-## Gemini integration
+## Talking to the server
 
-The frontend intentionally calls `POST /api/plan` instead of embedding a Gemini API key in browser code.
+The frontend holds no API keys and reads no `VITE_*` variables. It calls two
+endpoints, both same-origin through the dev proxy. Neither is implemented on the
+server yet — until they are, both buttons report that the server is unreachable:
 
-Request:
+- `POST /api/plan` with `{ "prompt": "…" }`, answering
+  `{ "planTitle": "…", "stops": EventItem[] }`. It always returns 200 with a
+  renderable body — the server owns the Gemini key, the prompt, and the
+  fallback — so there is no failure branch on this side.
+- `GET /api/surprise`, answering stored events straight from SQLite with no
+  Gemini call, and therefore no `description` or `why`.
 
-```json
-{
-  "model": "gemini-2.5-flash",
-  "prompt": "…",
-  "responseMimeType": "application/json",
-  "responseSchema": {
-    "...": "see PLAN_SCHEMA in src/main.ts"
-  }
-}
-```
+`EventItem` is defined once at the top of `src/main.ts`. Its `time` field is an
+ISO 8601 interval, `start/end` — every display path splits on `/` and takes the
+start.
 
-The endpoint should:
-1. Authenticate/authorize the user if needed.
-2. Call Gemini using a server-side secret.
-3. Force structured JSON using the supplied schema.
-4. Return `{ "events": [...] }` or `{ "data": { "events": [...] } }`.
+## Map
 
-## Database
-
-The app supports Supabase through:
-
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_ANON_KEY`
-
-`supabase-schema.sql` contains the base tables.
-
-The browser never receives a Gemini secret. Supabase's browser key must still be protected with Row Level Security.
-
-## Demo fallback
-
-`public/demo-events.csv` is loaded when Gemini returns an error/empty plan. Because no sample CSV was available in the supplied files, this project includes a compatible demonstration CSV.
-
-## Geocoding / map
-
-The mapper uses Leaflet + OpenStreetMap tiles. Event locations are geocoded only when the user clicks "Reveal on map", then cached in `localStorage` for that browser session.
+The mapper uses Leaflet + OpenStreetMap tiles. Coordinates are resolved once at
+write time and stored on the event row; the browser does no geocoding and keeps
+no geocode cache. `lat`/`lon` are optional — an event without them lists
+normally, it just has no pin and no "Reveal on map" button.
