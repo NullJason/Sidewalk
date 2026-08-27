@@ -50,6 +50,10 @@ function toLocalDate(instant: Date): LocalDate {
   };
 }
 
+function formatLocalDate({ year, month, day }: LocalDate): string {
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
 /**
  * Day arithmetic goes through `Date.UTC`, which handles month and year rollover, so
  * nothing here has to know how long a month is. These are calendar dates being
@@ -60,12 +64,17 @@ function addDays({ year, month, day }: LocalDate, days: number): string {
   return shifted.toISOString().slice(0, 10);
 }
 
+/** YYYY-MM-DD, optionally followed by a wall-clock time. Anything else is not a date. */
+const LOCAL_DATE_TIME = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}(?::\d{2})?))?$/;
+
 /**
- * The UTC instant of local midnight on `date`. The offset is read at midday on that
- * date rather than assumed, so EST and EDT both come out right — and midday is far
- * enough from either DST transition (which happen at 2am) to be unambiguous.
+ * New York's offset from UTC on `date`, as "-04:00" or "-05:00".
+ *
+ * Read at midday on that date rather than assumed, so EST and EDT both come out right —
+ * and midday is far enough from either DST transition (they happen at 2am) to be
+ * unambiguous.
  */
-function midnightIso(date: string): string {
+function offsetOn(date: string): string {
   const midday = new Date(`${date}T12:00:00Z`);
   const offset = OFFSET_PARTS.formatToParts(midday).find(
     (part) => part.type === 'timeZoneName'
@@ -73,9 +82,30 @@ function midnightIso(date: string): string {
 
   // "GMT-04:00" -> "-04:00". Bare "GMT" means UTC, which longOffset reports without
   // a numeric suffix.
-  const numeric = (offset ?? '').replace('GMT', '') || '+00:00';
+  return (offset ?? '').replace('GMT', '') || '+00:00';
+}
 
-  return `${new Date(`${date}T00:00:00${numeric}`).toISOString().slice(0, 19)}Z`;
+/**
+ * The instant a New York wall-clock time refers to, or null if that is not a date.
+ *
+ * `new Date("2026-08-29T21:00:00")` reads an offset-less time in *the machine's* zone —
+ * which is New York on a laptop in Brooklyn and UTC on the deploy box, four hours apart.
+ * Anything reading a time that did not come with an offset has to say which zone it
+ * meant, and around here the answer is always New York.
+ */
+export function newYorkInstant(local: string): Date | null {
+  const match = LOCAL_DATE_TIME.exec(local.trim());
+  if (!match) return null;
+
+  const [, date, time = '00:00:00'] = match;
+  const parsed = new Date(`${date}T${time}${offsetOn(date as string)}`);
+
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/** The UTC instant of New York midnight on `date`. */
+function midnightIso(date: string): string {
+  return `${new Date(`${date}T00:00:00${offsetOn(date)}`).toISOString().slice(0, 19)}Z`;
 }
 
 /**
@@ -94,12 +124,23 @@ export function weekendWindow(now: Date): WeekendWindow {
   const monday = addDays(today, daysToSaturday + 2);
 
   return {
-    today: addDays(today, 0),
+    today: formatLocalDate(today),
     saturday,
     sunday,
     startIso: midnightIso(saturday),
     endIso: midnightIso(monday)
   };
+}
+
+/**
+ * The New York calendar date an instant falls on, YYYY-MM-DD.
+ *
+ * The same instant is a different date in UTC for four or five hours every evening,
+ * which is exactly the window most events run in — so anything that files an event
+ * under a day has to ask here rather than slicing the ISO string.
+ */
+export function newYorkDate(instant: Date): string {
+  return formatLocalDate(toLocalDate(instant));
 }
 
 /**

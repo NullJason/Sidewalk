@@ -15,9 +15,9 @@ missing (`CREATE TABLE IF NOT EXISTS`, plus an `ALTER TABLE` for the `lat`/`lon`
 columns on databases created before they existed). It never drops a table and
 never seeds.
 
-That split matters because `scripts/refresh.ts` — the discovery pipeline, not built
-yet — will append discovered events to this same file. Anything it writes has to
-survive a restart, which the old drop-and-reseed boot would not have allowed.
+That split matters because `scripts/refresh.ts` — the discovery pipeline — appends
+discovered events to this same file. Anything it writes has to survive a restart,
+which the old drop-and-reseed boot would not have allowed.
 
 ## Seeding
 
@@ -30,6 +30,22 @@ cannot overwrite a coordinate that discovery resolved.
 
 Point it at a scratch database with `SIDEWALK_DB=/tmp/whatever.db` if you want to
 try something without touching your real one.
+
+## Discovery
+
+`npm run refresh` finds real events for the coming Saturday and Sunday and appends
+them. It needs `GEMINI_API_KEY`, makes two calls — a grounded `google_search` one
+that writes a prose report, then a tool-less one that turns that into rows — and
+takes a couple of minutes.
+
+The prompts and the drop rules live in `server/discovery.ts`, the write in
+`server/ingest.ts`; `scripts/refresh.ts` is only the shell that runs them in order.
+It drops anything with no citation url and anything outside the weekend, and skips
+anything it already holds (matched on title + start date, or on url), so running it
+twice in a row stores nothing the second time. It never updates or deletes a row.
+
+Nothing here runs on a request. `/api/plan` only ever ranks rows a refresh already
+stored, which is what keeps it fast and keeps "never invent an event" true.
 
 ## Schema
 
