@@ -5,11 +5,6 @@ import data from './sampleData.json' with { type: 'json' };
 const app = express();
 const db = new Database('sidewalk.db');
 
-// drop tables
-db.prepare('DROP TABLE IF EXISTS event_tags').run();
-db.prepare('DROP TABLE IF EXISTS event_types').run();
-db.prepare('DROP TABLE IF EXISTS events').run();
-
 // create events table
 db.prepare(`
   CREATE TABLE IF NOT EXISTS events (
@@ -41,9 +36,11 @@ db.prepare(`
 `).run();
 
 // create insert into events statement
-const insertEvent = db.prepare(
-  'INSERT INTO events (title, time, url, location) VALUES (?, ?, ?, ?)'
-);
+const insertEvent = db.prepare(`
+  INSERT INTO events (title, time, url, location)
+  VALUES (?, ?, ?, ?)
+  ON CONFLICT(url) DO NOTHING
+`);
 
 // create insert into event_types statement
 const insertEventType = db.prepare(
@@ -56,19 +53,26 @@ const getType = db.prepare(
 
 // create insert into event_tags statement
 const insertEventTag = db.prepare(
-  'INSERT INTO event_tags (event_id, event_type_id) VALUES(?, ?)'
+  'INSERT OR IGNORE INTO event_tags (event_id, event_type_id) VALUES(?, ?)'
+);
+
+const getEvent = db.prepare(
+  'SELECT id FROM events WHERE url = ?'
 );
 
 // read sample data into tables
 for (const event of data) {
-  const result = insertEvent.run(
+  insertEvent.run(
     event.title,
     event.time,
     event.url,
     event.location
   );
 
-  const eventId = result.lastInsertRowid;
+  const existingEvent = getEvent.get(event.url);
+
+  // typescript warns that existingEvent is an unknown type
+  const eventId = existingEvent.id;
   const types = event.event_type.split(',');
 
   for (const type of types) {
