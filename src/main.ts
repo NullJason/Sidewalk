@@ -4,6 +4,14 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./styles.css";
 
+const sidewalkMarkerIcon = L.icon({
+  iconUrl: "/marker.png",
+  iconSize: [40, 40],
+  iconAnchor: [20, 40],
+  popupAnchor: [0, -40],
+  shadowUrl: undefined,
+});
+
 type UUID = string;
 
 interface EventItem {
@@ -620,7 +628,7 @@ async function revealOnMap(event: EventItem): Promise<void> {
 
   mapLayer.clearLayers();
 
-  const marker = L.marker([event.lat, event.lon]).addTo(mapLayer);
+  const marker = L.marker([event.lat, event.lon], {icon: sidewalkMarkerIcon}).addTo(mapLayer);
   marker.bindPopup(`
     <strong>${escapeHtml(event.title)}</strong><br>
     <span>${escapeHtml(event.location)}</span>
