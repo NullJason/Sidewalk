@@ -40,6 +40,14 @@ function migrate(db: Database.Database): void {
       FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
       FOREIGN KEY (event_type_id) REFERENCES event_types(id) ON DELETE CASCADE
     );
+
+    -- Facts about the database rather than about any event in it; see metadata.ts.
+    -- lastCheckedAt is written by scripts/refresh.ts when a run completes, which is
+    -- why it is a stored row and not something the server works out at boot.
+    CREATE TABLE IF NOT EXISTS metadata (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
 
   // lat/lon arrived after the first version of this schema (spec.md Decision 2).

@@ -1,10 +1,16 @@
 import type Database from 'better-sqlite3';
 
-import { dedupeKey, type DiscoveredEvent } from './discovery.js';
+import { appendToDataFile, DATA_FILE_PATH, type StorableEvent } from './dataFile.js';
+import { dedupeKey } from './discovery.js';
+import { selectAllEvents } from './events.js';
 
 export interface IngestResult {
   inserted: number;
   duplicates: number;
+}
+
+export interface RetainResult extends IngestResult {
+  appended: number; // rows new to data.json
 }
 
 /**
@@ -21,7 +27,7 @@ export interface IngestResult {
  */
 export function storeDiscoveredEvents(
   db: Database.Database,
-  events: DiscoveredEvent[]
+  events: StorableEvent[]
 ): IngestResult {
   const insertEvent = db.prepare(`
     INSERT OR IGNORE INTO events (title, time, url, location, lat, lon)
@@ -37,7 +43,7 @@ export function storeDiscoveredEvents(
 
   const selectExisting = db.prepare('SELECT title, time, url FROM events');
 
-  const store = db.transaction((batch: DiscoveredEvent[]) => {
+  const store = db.transaction((batch: StorableEvent[]) => {
     const stored = selectExisting.all() as Array<{ title: string; time: string; url: string }>;
 
     // Read once and kept up to date as we go, so the run dedupes against itself and
@@ -65,8 +71,8 @@ export function storeDiscoveredEvents(
         event.time,
         event.url,
         event.location,
-        event.lat,
-        event.lon
+        event.lat ?? null,
+        event.lon ?? null
       );
 
       // OR IGNORE suppresses every constraint class, not just the UNIQUE url. If the
@@ -102,4 +108,33 @@ export function storeDiscoveredEvents(
   });
 
   return store(events);
+}
+
+/**
+ * Keeps events in both places that outlive a single run: SQLite, and `data.json`.
+ *
+ * `sidewalk.db` is gitignored, so it is the copy that disappears with a laptop, a
+ * teammate's clone, or a redeploy; `data.json` is committed, and seeding a fresh
+ * database from it is how the events come back. An event stored in only one of the two
+ * either cannot be queried or cannot survive, so every path that decides an event is
+ * worth keeping comes through here and writes both.
+ *
+ * The mirror is of the whole table, not of `events` alone. That is the difference
+ * between a file that grows and a file that keeps up: rows a run stored before anything
+ * mirrored — and there were thirty-one of them when this was written — would otherwise
+ * stay stranded in an ignored database no matter how many times this ran afterwards.
+ * Both halves are append-only and dedupe on the same keys, so a call with nothing new
+ * in it writes nothing and says so.
+ *
+ * `dataFilePath` is a seam for the tests, which must not append to the repo's own file.
+ */
+export function retainEvents(
+  db: Database.Database,
+  events: StorableEvent[],
+  dataFilePath: string = DATA_FILE_PATH
+): RetainResult {
+  const { inserted, duplicates } = storeDiscoveredEvents(db, events);
+  const { appended } = appendToDataFile(selectAllEvents(db), dataFilePath);
+
+  return { inserted, duplicates, appended };
 }

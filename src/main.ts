@@ -24,6 +24,7 @@ interface PlanResponse {
 
 const PLAN_ENDPOINT = "/api/plan";
 const SURPRISE_ENDPOINT = "/api/surprise";
+const EVENTS_ENDPOINT = "/api/events";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("App root was not found.");
@@ -35,7 +36,10 @@ app.innerHTML = `
         <div class="brand">
           <span>Sidewalk</span>
         </div>
-        <div id="mode-label" class="mode-label">Finder</div>
+        <div class="topbar-meta">
+          <div id="events-badge" class="events-badge" role="status" aria-live="polite"></div>
+          <div id="mode-label" class="mode-label">Finder</div>
+        </div>
       </header>
 
       <main id="page-one" class="page active" aria-label="Weekend planner">
@@ -117,6 +121,7 @@ const $ = <T extends Element>(selector: string): T => {
 const pageOne = $<HTMLElement>("#page-one");
 const pageTwo = $<HTMLElement>("#page-two");
 const modeLabel = $<HTMLElement>("#mode-label");
+const eventsBadge = $<HTMLElement>("#events-badge");
 const promptInput = $<HTMLTextAreaElement>("#prompt");
 const charCount = $<HTMLElement>("#char-count");
 const planForm = $<HTMLFormElement>("#plan-form");
@@ -132,6 +137,14 @@ const mapperTitle = $<HTMLElement>("#mapper-title");
 const toast = $<HTMLElement>("#toast");
 
 let currentEvents: EventItem[] = [];
+
+/**
+ * What produced the list currently on screen, so "Refresh events" can run it again
+ * instead of re-rendering the array it already has. A plan carries its vibe: refreshing
+ * a weekend the user described has to ask for that weekend again, not a random one.
+ */
+type LastView = { kind: "plan"; prompt: string } | { kind: "surprise" };
+let lastView: LastView | null = null;
 let map: L.Map | null = null;
 let mapLayer: L.LayerGroup | null = null;
 let toastTimer: number | undefined;
@@ -258,11 +271,11 @@ async function fetchJson(input: string, init: RequestInit = {}): Promise<unknown
 
 // POST /api/plan always answers 200 with a renderable body — the server owns the
 // Gemini key, the prompt, and the fallback. There is no failure case on this side.
-async function requestPlan(prompt: string): Promise<PlanResponse> {
+async function requestPlan(prompt: string, exclude: number[] = []): Promise<PlanResponse> {
   const payload = await fetchJson(PLAN_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt })
+    body: JSON.stringify({ prompt, exclude })
   });
 
   const candidate = (payload ?? {}) as Record<string, unknown>;
@@ -278,12 +291,79 @@ async function requestPlan(prompt: string): Promise<PlanResponse> {
 
 // GET /api/surprise returns stored events straight from SQLite, with no
 // description/why. It may answer with a single event or a short list.
-async function requestSurprise(): Promise<EventItem[]> {
-  const payload = await fetchJson(SURPRISE_ENDPOINT);
+async function requestSurprise(exclude: number[] = []): Promise<EventItem[]> {
+  const query = exclude.length ? `?exclude=${exclude.join(",")}` : "";
+  const payload = await fetchJson(`${SURPRISE_ENDPOINT}${query}`);
   if (Array.isArray(payload)) return normalizeEvents(payload);
 
   const single = normalizeEvent(payload);
   return single ? [single] : [];
+}
+
+interface EventsSummary {
+  count: number;
+  lastCheckedAt: string | null; // null until a refresh run has completed once
+}
+
+// GET /api/events is the whole stored list plus when discovery last finished. Only the
+// size of the list is read here — the badge reports what the database holds, so it
+// counts rows rather than the subset this client would manage to render.
+async function requestEventsSummary(): Promise<EventsSummary> {
+  const payload = await fetchJson(EVENTS_ENDPOINT);
+  const raw = (payload ?? {}) as Record<string, unknown>;
+
+  return {
+    count: Array.isArray(raw.events) ? raw.events.length : 0,
+    lastCheckedAt: typeof raw.lastCheckedAt === "string" ? raw.lastCheckedAt : null
+  };
+}
+
+const RELATIVE_TIME = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+// "2 hours ago" rather than a timestamp: the badge exists to answer "is this recent?",
+// and a reader should not have to do the subtraction themselves to find out.
+function formatRelative(iso: string): string | null {
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return null;
+
+  const delta = at - Date.now();
+  const size = Math.abs(delta);
+
+  if (size < MINUTE_MS) return "just now";
+  if (size < HOUR_MS) return RELATIVE_TIME.format(Math.round(delta / MINUTE_MS), "minute");
+  if (size < DAY_MS) return RELATIVE_TIME.format(Math.round(delta / HOUR_MS), "hour");
+
+  return RELATIVE_TIME.format(Math.round(delta / DAY_MS), "day");
+}
+
+function renderEventsBadge(summary: EventsSummary): void {
+  const events = `${summary.count} event${summary.count === 1 ? "" : "s"}`;
+  const refreshed = summary.lastCheckedAt ? formatRelative(summary.lastCheckedAt) : null;
+
+  // No timestamp means no refresh has ever completed against this database — a fresh
+  // seed, normally. Saying so is better than dressing the seed date up as a check.
+  eventsBadge.textContent = refreshed
+    ? `${events} · last refreshed ${refreshed}`
+    : `${events} · not refreshed yet`;
+
+  eventsBadge.title = summary.lastCheckedAt
+    ? new Date(summary.lastCheckedAt).toLocaleString()
+    : "Run `npm run refresh` to pull in this weekend's events.";
+}
+
+// The badge is a claim about the data, so a badge that cannot reach the server makes no
+// claim at all — it empties rather than showing a stale or apologetic one.
+async function loadEventsBadge(): Promise<void> {
+  try {
+    renderEventsBadge(await requestEventsSummary());
+  } catch (error) {
+    console.error(error);
+    eventsBadge.textContent = "";
+  }
 }
 
 // lat/lon are always both set or both absent, so one predicate answers "can this
@@ -430,14 +510,18 @@ function setBusy(busy: boolean): void {
   planButton.disabled = busy;
   mapperButton.disabled = busy;
   surpriseButton.disabled = busy;
+  refreshButton.disabled = busy;
   planButton.classList.toggle("loading", busy);
 }
 
-async function generatePlan(userPrompt: string): Promise<void> {
+// Submitting with nothing typed is not an error to correct — it is the Surprise Me
+// path, plus a line saying that is what happened.
+const EMPTY_PROMPT_NOTE = "No vibe given — here's a surprise instead.";
+
+async function generatePlan(userPrompt: string, exclude: number[] = []): Promise<void> {
   const trimmed = userPrompt.trim();
   if (!trimmed) {
-    setStatus("Type a vibe first, or use Surprise me.", "error");
-    promptInput.focus();
+    await surpriseMe(EMPTY_PROMPT_NOTE);
     return;
   }
 
@@ -445,9 +529,10 @@ async function generatePlan(userPrompt: string): Promise<void> {
   setStatus("Sidewalk is mapping the vibe…");
 
   try {
-    const plan = await requestPlan(trimmed);
+    const plan = await requestPlan(trimmed, exclude);
 
     currentEvents = plan.stops;
+    lastView = { kind: "plan", prompt: trimmed };
     mapperTitle.textContent = plan.planTitle;
     setStatus(
       plan.stops.length ? "Weekend mapped." : "No events matched this weekend.",
@@ -462,12 +547,14 @@ async function generatePlan(userPrompt: string): Promise<void> {
   }
 }
 
-async function surpriseMe(): Promise<void> {
+// `doneMessage` is how the empty-prompt route above says why a surprise turned up
+// when the user pressed "Plan my weekend".
+async function surpriseMe(doneMessage = "Quest selected.", exclude: number[] = []): Promise<void> {
   setBusy(true);
   setStatus("Finding a Sidewalk quest…");
 
   try {
-    const events = await requestSurprise();
+    const events = await requestSurprise(exclude);
 
     if (!events.length) {
       setStatus("No stored events yet. Run the seed and try again.", "error");
@@ -475,8 +562,9 @@ async function surpriseMe(): Promise<void> {
     }
 
     currentEvents = events;
+    lastView = { kind: "surprise" };
     mapperTitle.textContent = "A surprise sidewalk";
-    setStatus("Quest selected.", "success");
+    setStatus(doneMessage, "success");
     setPage("two");
   } catch (error) {
     console.error(error);
@@ -512,7 +600,43 @@ mapperButton.addEventListener("click", () => {
 
 backButton.addEventListener("click", () => setPage("one"));
 
-refreshButton.addEventListener("click", () => {
-  renderEventList();
+/**
+ * "Refresh events" re-runs whatever produced the current view.
+ *
+ * It used to re-render `currentEvents` and re-read the badge, which is why it never
+ * produced anything new — the array it drew from was the one already on screen. What the
+ * button is actually asking for is another go: a fresh Surprise pick, or the same vibe
+ * planned again, in both cases told which events are already showing so the server can
+ * pick past them.
+ *
+ * With no view yet there is nothing to re-run, so it falls back to the old behaviour of
+ * re-reading the badge and re-rendering the empty state.
+ */
+async function refreshEvents(): Promise<void> {
+  // The badge reports what the database holds rather than what the view shows, and a
+  // `npm run refresh` finishing while this page is open is exactly the case it exists
+  // to surface. Worth re-reading whichever branch below runs.
+  void loadEventsBadge();
+
+  if (!lastView) {
+    renderEventList();
+    showToast("Nothing to refresh yet — plan a weekend or try Surprise me.");
+    return;
+  }
+
+  const showing = currentEvents.map((event) => event.id);
+
+  if (lastView.kind === "surprise") {
+    await surpriseMe("A fresh set of quests.", showing);
+  } else {
+    await generatePlan(lastView.prompt, showing);
+  }
+
   showToast(currentEvents.length ? "Events refreshed." : "No events to show yet.");
+}
+
+refreshButton.addEventListener("click", () => {
+  void refreshEvents();
 });
+
+void loadEventsBadge();

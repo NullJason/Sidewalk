@@ -1,10 +1,15 @@
 import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
 
+import type { DataFileEvent } from './dataFile.js';
 import type { DiscoveredEvent } from './discovery.js';
 import { selectWeekendCandidates } from './events.js';
-import { storeDiscoveredEvents } from './ingest.js';
+import { retainEvents, storeDiscoveredEvents } from './ingest.js';
+import type { PlanStop } from './plan.js';
 import { weekendWindow } from './weekend.js';
 
 // Thu 2026-08-27 in New York, so the weekend is Sat 2026-08-29 / Sun 2026-08-30.
@@ -167,5 +172,80 @@ describe('storeDiscoveredEvents', () => {
 
     assert.deepEqual(result, { inserted: 0, duplicates: 0 });
     assert.equal(rows(db).length, 0);
+  });
+});
+
+describe('retainEvents', () => {
+  // Never the repo's own server/data.json: these tests append, and the real file is the
+  // only copy of the events that git tracks.
+  const scratchPath = (): string => join(mkdtempSync(join(tmpdir(), 'sidewalk-')), 'data.json');
+  const read = (path: string): DataFileEvent[] => JSON.parse(readFileSync(path, 'utf8'));
+
+  it('writes an event to SQLite and to data.json in one call', () => {
+    const db = emptyDatabase();
+    const path = scratchPath();
+
+    const result = retainEvents(db, [discovered()], path);
+
+    assert.deepEqual(result, { inserted: 1, duplicates: 0, appended: 1 });
+    assert.equal(rows(db).length, 1);
+    assert.equal(read(path)[0]?.url, discovered().url);
+  });
+
+  it('mirrors rows an earlier run left stranded in the database', () => {
+    // The case this exists for: 31 events had been discovered into a gitignored
+    // sidewalk.db before anything mirrored, and no later run would have rescued them
+    // if the mirror only ever carried the batch in hand.
+    const db = emptyDatabase();
+    const path = scratchPath();
+
+    storeDiscoveredEvents(db, [discovered({ title: 'Stranded', url: 'https://x/stranded' })]);
+
+    const result = retainEvents(db, [discovered()], path);
+
+    assert.equal(result.appended, 2);
+    assert.deepEqual(
+      read(path).map((event) => event.url).sort(),
+      ['https://www.nycgovparks.org/events/bryant-park', 'https://x/stranded']
+    );
+  });
+
+  it('is safe to run twice — the second call stores and appends nothing', () => {
+    const db = emptyDatabase();
+    const path = scratchPath();
+
+    retainEvents(db, [discovered()], path);
+    const result = retainEvents(db, [discovered()], path);
+
+    assert.deepEqual(result, { inserted: 0, duplicates: 1, appended: 0 });
+    assert.equal(read(path).length, 1);
+  });
+
+  it('keeps the row from a plan stop and drops the lines Gemini wrote for it', () => {
+    const db = emptyDatabase();
+    const path = scratchPath();
+
+    // Exactly what /api/plan hands over: a stored row plus the per-response fields,
+    // which are never stored (spec.md — description and why are written fresh per call).
+    const stop: PlanStop = {
+      id: 4,
+      title: 'Bryant Park Picnic Performance',
+      time: '2026-08-29T21:00:00Z/2026-08-29T22:00:00Z',
+      url: 'https://www.nycgovparks.org/events/bryant-park',
+      location: 'Bryant Park Lawn, Manhattan',
+      event_type: 'concert',
+      lat: 40.7536,
+      lon: -73.9832,
+      description: 'Circus on the lawn.',
+      why: 'Free and outdoors.'
+    };
+
+    retainEvents(db, [stop], path);
+
+    const [stored] = read(path);
+    assert.equal(stored?.title, 'Bryant Park Picnic Performance');
+    assert.equal('description' in (stored ?? {}), false);
+    assert.equal('why' in (stored ?? {}), false);
+    assert.equal('id' in (stored ?? {}), false);
   });
 });

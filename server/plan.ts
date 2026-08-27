@@ -6,6 +6,16 @@ export const MAX_STOPS = 3;
 
 const DEFAULT_PLAN_TITLE = 'Your weekend';
 
+/**
+ * What a fallback plan says instead of the two generated lines. Static, because the
+ * curation call is exactly what failed — nothing wrote them. They are still filled in
+ * rather than omitted so the card reads as a deliberate answer rather than a plan that
+ * came back half-empty.
+ */
+const FALLBACK_PLAN_TITLE = 'A weekend, picked at random';
+const FALLBACK_DESCRIPTION = 'Straight from our events list — no write-up this time.';
+const FALLBACK_WHY = 'Picked while our planner was catching its breath.';
+
 export interface PlanStop extends StoredEvent {
   description?: string; // generated per response, never stored
   why?: string; // generated per response, never stored
@@ -171,5 +181,24 @@ export function parsePlan(text: string, candidates: StoredEvent[]): Plan {
   return {
     planTitle: cleanLine(raw.planTitle, 120) ?? DEFAULT_PLAN_TITLE,
     stops
+  };
+}
+
+/**
+ * The plan `/api/plan` answers with when the Gemini curation call throws or times out.
+ *
+ * Same shape as the happy path, so the client has no failure case to handle: a 200 from
+ * `/api/plan` is always renderable the same way. The stops are random stored events —
+ * the same pick `/api/surprise` makes — because the one thing that failed is precisely
+ * the part that would have chosen better ones.
+ */
+export function fallbackPlan(events: StoredEvent[]): Plan {
+  return {
+    planTitle: FALLBACK_PLAN_TITLE,
+    stops: events.slice(0, MAX_STOPS).map((event) => ({
+      ...event,
+      description: FALLBACK_DESCRIPTION,
+      why: FALLBACK_WHY
+    }))
   };
 }

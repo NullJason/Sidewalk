@@ -150,8 +150,6 @@ dist/
 
 .DS_Store
 
-sidewalk.db
-
 # Claude Code / Matt Pocock skills local config (not for GitHub)
 .claude/
 .scratch/

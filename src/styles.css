@@ -78,11 +78,37 @@ button {
 }
 
 
+.topbar-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+/* "N events - last refreshed 2 hours ago". Empty until /api/events answers, and
+   empty again if it cannot — the badge is a claim about the data, so it says
+   nothing rather than something it cannot back. :empty drops the divider with it. */
+.events-badge {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 14px;
+  border-right: 1px solid var(--line);
+}
+
+.events-badge:empty {
+  padding-right: 0;
+  border-right: 0;
+}
+
 .mode-label {
   color: var(--muted);
   font-size: 12px;
   letter-spacing: .12em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .page {
@@ -466,6 +492,10 @@ h1 {
   .shell { padding: 8px; }
   .app-frame { min-height: calc(100vh - 16px); }
   .topbar { padding: 14px 15px; }
+  /* Two labels do not fit beside the brand on a phone, and of the two the counter is
+     the one carrying information the mode is not already obvious from. */
+  .mode-label { display: none; }
+  .events-badge { padding-right: 0; border-right: 0; }
   #page-one { padding: 30px 15px 50px; }
   h1 { font-size: 50px; }
   .hero-copy { font-size: 14px; }

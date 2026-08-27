@@ -1,15 +1,6 @@
-import data from './sampleData.json' with { type: 'json' };
+import data from './data.json' with { type: 'json' };
 import { countEvents, openDatabase } from './db.js';
-
-interface SeedEvent {
-  title: string;
-  time: string;
-  url: string;
-  location: string;
-  event_type: string;
-  lat?: number;
-  lon?: number;
-}
+import type { DataFileEvent } from './dataFile.js';
 
 const db = openDatabase();
 
@@ -39,9 +30,13 @@ const insertEventTag = db.prepare(
 
 /**
  * `events.url` is UNIQUE, so a second run inserts nothing rather than duplicating
- * the seed rows, and reports how many it skipped instead of doing it silently.
+ * the rows, and reports how many it skipped instead of doing it silently.
+ *
+ * `data.json` grows: `refresh.ts` and `/api/plan` both append what they find to it
+ * (see `ingest.ts`'s `retainEvents`), so re-running the seed after a refresh is how a
+ * database that was rebuilt from scratch catches up with everything discovered since.
  */
-const seed = db.transaction((events: SeedEvent[]) => {
+const seed = db.transaction((events: DataFileEvent[]) => {
   let inserted = 0;
   let skipped = 0;
   let backfilled = 0;
@@ -67,7 +62,7 @@ const seed = db.transaction((events: SeedEvent[]) => {
     if (!row) {
       throw new Error(
         `Could not store seed event ${JSON.stringify(event.url)} (${event.title}). ` +
-          'Check that title, time, url, and location are all present in sampleData.json.'
+          'Check that title, time, url, and location are all present in data.json.'
       );
     }
 
@@ -96,7 +91,7 @@ const seed = db.transaction((events: SeedEvent[]) => {
   return { inserted, skipped, backfilled };
 });
 
-const { inserted, skipped, backfilled } = seed(data as SeedEvent[]);
+const { inserted, skipped, backfilled } = seed(data as DataFileEvent[]);
 
 console.log(`Seed complete: ${inserted} new event(s), ${skipped} already present.`);
 if (backfilled > 0) console.log(`Filled in coordinates for ${backfilled} existing event(s).`);

@@ -51,11 +51,23 @@ const selectEvents = (clauses: string): string => `
  * The random pick happens in the subquery, over `events` alone. Selecting at the
  * top level instead would shuffle the *joined* rows, so an event with three types
  * would be three times as likely to come up as one with a single type.
+ *
+ * `excludeCount` widens the statement rather than the values: the ids arrive from a
+ * query string, so they go in as placeholders and only their *number* is allowed to
+ * shape the SQL.
  */
-const RANDOM_EVENTS_SQL = selectEvents(`
-  WHERE e.id IN (SELECT id FROM events ORDER BY RANDOM() LIMIT ?)
-  GROUP BY e.id
-`);
+const randomEventsSql = (excludeCount: number): string => {
+  const holes = new Array(excludeCount).fill('?').join(', ');
+
+  return selectEvents(`
+    WHERE e.id IN (
+      SELECT id FROM events
+      ${excludeCount ? `WHERE id NOT IN (${holes})` : ''}
+      ORDER BY RANDOM() LIMIT ?
+    )
+    GROUP BY e.id
+  `);
+};
 
 /**
  * A deliberately loose pre-filter, padded by a day at each end.
@@ -72,6 +84,16 @@ const RANDOM_EVENTS_SQL = selectEvents(`
  */
 const WEEKEND_EVENTS_SQL = selectEvents(`
   WHERE e.time >= ? AND e.time < ?
+  GROUP BY e.id
+  ORDER BY e.time ASC
+`);
+
+/**
+ * Everything stored, in start order. No window and no limit: this backs `/api/events`,
+ * whose job is to say what the database actually holds — including the past weekends
+ * that `selectWeekendCandidates` exists to keep away from Gemini.
+ */
+const ALL_EVENTS_SQL = selectEvents(`
   GROUP BY e.id
   ORDER BY e.time ASC
 `);
@@ -103,13 +125,41 @@ function toEventItem(row: EventRow): StoredEvent {
   return event;
 }
 
-/**
- * Returns up to `limit` random stored events. Fewer if the database holds fewer,
- * and an empty array on an unseeded database — callers render what they get.
- */
-export function selectRandomEvents(db: Database.Database, limit: number): StoredEvent[] {
-  const rows = db.prepare(RANDOM_EVENTS_SQL).all(limit) as EventRow[];
+function pickRandom(
+  db: Database.Database,
+  limit: number,
+  exclude: number[]
+): StoredEvent[] {
+  const rows = db.prepare(randomEventsSql(exclude.length)).all(...exclude, limit) as EventRow[];
   return rows.map(toEventItem);
+}
+
+/**
+ * Returns up to `limit` random stored events, preferring ones not in `exclude`.
+ *
+ * `exclude` is what the client already has on screen, so that pressing "Surprise me"
+ * a second time moves on rather than re-serving the same pick. It is a preference and
+ * not a filter: once fewer than `limit` unseen events are left, the remainder is
+ * topped up from the excluded ones instead of returning a short set. Running out of
+ * new events is the honest end of the sequence, but handing back one card where there
+ * were three reads as a bug rather than as an ending.
+ *
+ * Fewer than `limit` still comes back when the database genuinely holds fewer, and an
+ * empty array on an unseeded one — callers render what they get.
+ */
+export function selectRandomEvents(
+  db: Database.Database,
+  limit: number,
+  exclude: number[] = []
+): StoredEvent[] {
+  const picked = pickRandom(db, limit, exclude);
+  if (picked.length >= limit || !exclude.length) return picked;
+
+  // Top up from everything except what this call has already chosen, which is what
+  // keeps a wrapped-around set free of duplicates within itself.
+  const topUp = pickRandom(db, limit - picked.length, picked.map((event) => event.id));
+
+  return [...picked, ...topUp];
 }
 
 /**
@@ -132,4 +182,10 @@ export function selectWeekendCandidates(
     ) as EventRow[];
 
   return rows.map(toEventItem).filter((event) => isInWindow(event.time, weekend));
+}
+
+/** Every stored event, oldest first. An empty database answers with an empty list. */
+export function selectAllEvents(db: Database.Database): StoredEvent[] {
+  const rows = db.prepare(ALL_EVENTS_SQL).all() as EventRow[];
+  return rows.map(toEventItem);
 }

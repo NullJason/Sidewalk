@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
 import { describe, it } from 'node:test';
 
-import { selectWeekendCandidates } from './events.js';
+import { selectRandomEvents, selectWeekendCandidates } from './events.js';
 import { weekendWindow } from './weekend.js';
 
 // Thu 2026-08-27 in New York, so the weekend is Sat 2026-08-29 / Sun 2026-08-30.
@@ -92,5 +92,64 @@ describe('selectWeekendCandidates', () => {
     ]);
 
     assert.deepEqual(urls(db), ['https://x/1', 'https://x/2', 'https://x/0']);
+  });
+});
+
+describe('selectRandomEvents', () => {
+  const times = (count: number): string[] =>
+    Array.from({ length: count }, () => '2026-08-29T21:00:00Z/2026-08-29T22:00:00Z');
+
+  const ids = (db: Database.Database, limit: number, exclude?: number[]): number[] =>
+    selectRandomEvents(db, limit, exclude).map((event) => event.id);
+
+  it('never repeats an event inside one pick', () => {
+    const db = withEvents(times(6));
+
+    for (let run = 0; run < 25; run += 1) {
+      const picked = ids(db, 3);
+      assert.equal(new Set(picked).size, 3, 'the same event came back twice in one pick');
+    }
+  });
+
+  it('skips the events the caller is already showing', () => {
+    const db = withEvents(times(6));
+
+    // Looped because the pick is random: a single green run would prove nothing.
+    for (let run = 0; run < 25; run += 1) {
+      const picked = ids(db, 3, [1, 2, 3]);
+
+      assert.deepEqual(picked.slice().sort(), [4, 5, 6], 'an excluded event was returned');
+    }
+  });
+
+  it('still returns a full set once every event has been seen', () => {
+    const db = withEvents(times(4));
+
+    // Nothing is unseen, so the whole table is back in play rather than the pick
+    // coming back short — three cards is the contract, repeats are the honest ending.
+    for (let run = 0; run < 25; run += 1) {
+      const picked = ids(db, 3, [1, 2, 3, 4]);
+
+      assert.equal(picked.length, 3);
+      assert.equal(new Set(picked).size, 3, 'the wrap-around pick repeated an event');
+    }
+  });
+
+  it('tops up a short pick without repeating what it just chose', () => {
+    const db = withEvents(times(4));
+
+    for (let run = 0; run < 25; run += 1) {
+      const picked = ids(db, 3, [1, 2]);
+
+      assert.equal(picked.length, 3);
+      assert.equal(new Set(picked).size, 3, 'the top-up repeated an event');
+      // 3 and 4 are the only unseen ones, so both must be in every pick.
+      assert.ok(picked.includes(3) && picked.includes(4), 'an unseen event was passed over');
+    }
+  });
+
+  it('returns everything it has when the database holds fewer than asked for', () => {
+    assert.equal(ids(withEvents(times(2)), 3).length, 2);
+    assert.deepEqual(ids(withEvents([]), 3), [], 'an unseeded database should answer empty');
   });
 });

@@ -3,7 +3,8 @@ import 'dotenv/config';
 import { countEvents, openDatabase } from '../server/db.js';
 import { CITY, parseDiscoveries } from '../server/discovery.js';
 import { normalizeDiscoveries, searchForEvents } from '../server/gemini.js';
-import { storeDiscoveredEvents } from '../server/ingest.js';
+import { retainEvents } from '../server/ingest.js';
+import { setLastCheckedAt } from '../server/metadata.js';
 import { weekendWindow } from '../server/weekend.js';
 
 /**
@@ -39,10 +40,17 @@ async function refresh(): Promise<void> {
   const db = openDatabase();
 
   try {
-    const { inserted, duplicates } = storeDiscoveredEvents(db, events);
+    const { inserted, duplicates, appended } = retainEvents(db, events);
 
     console.log(`Stored ${inserted} new event(s); ${duplicates} already in the database.`);
-    console.log(`${countEvents(db)} event(s) in the database.`);
+    console.log(`Appended ${appended} event(s) to server/data.json — commit it to keep them.`);
+
+    // Last, and only on the way out: this is the timestamp /api/events shows, so it has
+    // to mean "a run got all the way here", not "a run was attempted". A refresh that
+    // threw on the way past leaves the old one standing, which is the honest answer.
+    const at = setLastCheckedAt(db);
+
+    console.log(`${countEvents(db)} event(s) in the database. Last checked ${at}.`);
   } finally {
     db.close();
   }

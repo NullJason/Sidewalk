@@ -4,7 +4,7 @@ Express + SQLite. Run everything from the repo root — there is one `package.js
 
 ```bash
 npm install
-npm run seed     # one time, loads sampleData.json into a fresh sidewalk.db
+npm run seed     # loads data.json into sidewalk.db; re-run after a refresh
 npm run server   # http://localhost:3000
 ```
 
@@ -19,17 +19,32 @@ That split matters because `scripts/refresh.ts` — the discovery pipeline — a
 discovered events to this same file. Anything it writes has to survive a restart,
 which the old drop-and-reseed boot would not have allowed.
 
-## Seeding
+## The two copies: `data.json` and `sidewalk.db`
 
-`npm run seed` loads `server/sampleData.json`. It is safe to run repeatedly:
-`events.url` is UNIQUE, so a second run inserts nothing and says so rather than
-duplicating rows. It also fills in `lat`/`lon` on seed rows that don't have them
-yet, which is what upgrades a database seeded before the coordinates were
-backfilled. It only ever writes into `NULL` columns, so once `refresh.ts` lands it
-cannot overwrite a coordinate that discovery resolved.
+`server/data.json` is the events list, and it is the copy that lasts. `sidewalk.db`
+is gitignored — it belongs to one machine and goes away with a reinstall, a clone,
+or a redeploy — so an event only really joins the collection once it is in the file.
 
-Point it at a scratch database with `SIDEWALK_DB=/tmp/whatever.db` if you want to
-try something without touching your real one.
+The two are kept in step in opposite directions:
+
+- `npm run seed` loads `data.json` into the database.
+- `retainEvents` (`server/ingest.ts`) mirrors the database back into `data.json`,
+  and both `npm run refresh` and `/api/plan` call it.
+
+The mirror copies the whole table rather than the events in hand, so rows an earlier
+run stored before any of this existed get picked up too. Both directions are
+append-only and dedupe on url and on title+date, so nothing is ever overwritten and
+running either twice does nothing the second time. **`data.json` is tracked — commit
+it after a refresh, or the events stay on your laptop.**
+
+Seeding is safe to run repeatedly: `events.url` is UNIQUE, so a second run inserts
+nothing and says so rather than duplicating rows. It also fills in `lat`/`lon` on
+rows that don't have them yet, which is what upgrades a database seeded before the
+coordinates were backfilled. It only ever writes into `NULL` columns, so it cannot
+overwrite a coordinate that discovery resolved.
+
+Point either copy somewhere scratch if you want to try something without touching
+the real ones: `SIDEWALK_DB=/tmp/whatever.db`, `SIDEWALK_DATA=/tmp/whatever.json`.
 
 ## Discovery
 
@@ -47,6 +62,21 @@ twice in a row stores nothing the second time. It never updates or deletes a row
 Nothing here runs on a request. `/api/plan` only ever ranks rows a refresh already
 stored, which is what keeps it fast and keeps "never invent an event" true.
 
+## Endpoints
+
+| | |
+|---|---|
+| `POST /api/plan` | A vibe in, a 3-stop itinerary out, curated by Gemini from stored rows. Always 200 with a renderable body: a failed curation falls back to random stored events. |
+| `GET /api/surprise` | One random stored event. No Gemini call, so no `description`/`why`. |
+| `GET /api/events` | Everything stored, plus `lastCheckedAt`. Backs the counter in the header. |
+| `GET /api/health` | `{ ok: true }`, for checking the dev proxy. |
+
+`lastCheckedAt` is written by `npm run refresh` when a run *completes*, and by nothing
+else — deliberately not on boot. The counter's job is to show that the data is real and
+recent, and a timestamp that moved every time the process restarted would say nothing
+about the data while looking like it did. It is `null` until the first refresh finishes,
+which the frontend renders as "not refreshed yet" rather than inventing a time.
+
 ## Schema
 
 ```
@@ -58,6 +88,10 @@ events                          event_types            event_tags
   location  TEXT NOT NULL
   lat       REAL                -- nullable
   lon       REAL                -- nullable
+
+metadata
+  key       TEXT PK             -- 'lastCheckedAt' is the only one so far
+  value     TEXT NOT NULL
 ```
 
 `time` is an ISO 8601 interval, `start/end` — not an instant. Every filter, sort,

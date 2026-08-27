@@ -12,6 +12,13 @@ import type { WeekendWindow } from './weekend.js';
 
 // Overridable so a model retirement is an .env edit, not a deploy. The 2.5 line is
 // already closed to new keys; the API names its own replacement in the 404 body.
+//
+// Held at 3.6-flash deliberately. 3.7-flash answers every call on this key with a 503
+// UNAVAILABLE ("experiencing high demand") — measured at 6 of 6, against 6 of 6 clean on
+// 3.6-flash — and a curation call that always throws is a plan that is always the
+// fallback. 503 is capacity, not retirement: the model is real and a key with room for
+// it will serve it, so this is a floor to move back up rather than a dead end. Set
+// GEMINI_MODEL in .env to try a newer line without touching this file.
 const MODEL = process.env.GEMINI_MODEL ?? 'gemini-3.6-flash';
 
 // The demo is live and on stage, but url_context fetches a page per candidate before

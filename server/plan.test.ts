@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import type { StoredEvent } from './events.js';
-import { parsePlan } from './plan.js';
+import { fallbackPlan, MAX_STOPS, parsePlan } from './plan.js';
 
 const candidates: StoredEvent[] = [
   {
@@ -200,5 +200,44 @@ describe('parsePlan', () => {
   it('throws when no stop survives validation', () => {
     // Nothing the model said was real, so there is no curation to top up.
     assert.throws(() => parsePlan(reply({ planTitle: 'x', stops: [{ id: 999 }] }), candidates));
+  });
+});
+
+describe('fallbackPlan', () => {
+  it('answers with the same shape as a curated plan', () => {
+    const plan = fallbackPlan(candidates);
+
+    assert.ok(plan.planTitle);
+    assert.deepEqual(ids(plan), [1, 2, 3]);
+    // The frontend has no special case for a failed curation, so every stop has to
+    // carry the fields a curated stop carries.
+    for (const stop of plan.stops) {
+      assert.ok(stop.description);
+      assert.ok(stop.why);
+    }
+  });
+
+  it('stops at MAX_STOPS however many events it is handed', () => {
+    const many = [...candidates, ...candidates.map((c) => ({ ...c, id: c.id + 100 }))];
+
+    assert.equal(fallbackPlan(many).stops.length, MAX_STOPS);
+  });
+
+  it('copies the stored row through untouched, coordinates included', () => {
+    const [first, , third] = fallbackPlan(candidates).stops;
+
+    assert.equal(first?.title, 'Bryant Park Picnic Performance');
+    assert.equal(first?.url, 'https://www.nycgovparks.org/events/bryant-park');
+    assert.equal(first?.lat, 40.7536);
+    // No coordinates in, no coordinates out — this stop simply gets no pin.
+    assert.equal(third?.lat, undefined);
+    assert.equal(third?.lon, undefined);
+  });
+
+  it('still returns a renderable body when there is nothing to pick from', () => {
+    const plan = fallbackPlan([]);
+
+    assert.ok(plan.planTitle);
+    assert.deepEqual(plan.stops, []);
   });
 });

@@ -88,5 +88,338 @@
     "event_type": "art,education",
     "lat": 40.7932,
     "lon": -73.9772
+  },
+  {
+    "title": "It's My Park at Westerleigh Park",
+    "time": "2026-08-29T13:00:00Z/2026-08-29T16:00:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/29/its-my-park-at-westerleigh-park",
+    "location": "Westerleigh Park (Gazebo), Staten Island",
+    "event_type": "volunteer park cleanup,community beautification",
+    "lat": 40.6211,
+    "lon": -74.1311
+  },
+  {
+    "title": "Interactive Baby Class with Flying Teapot",
+    "time": "2026-08-29T13:30:00Z/2026-08-29T14:30:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/29/interactive-baby-class-with-flying-teapot",
+    "location": "East Fourth Street Community Garden, Brooklyn",
+    "event_type": "interactive kids/family music session",
+    "lat": 40.648,
+    "lon": -73.9768
+  },
+  {
+    "title": "Open Farm Day at Battery Urban Farm",
+    "time": "2026-08-29T13:30:00Z/2026-08-29T16:00:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/29/open-farm-day-at-battery-urban-farm",
+    "location": "Battery Urban Farm in The Battery, Manhattan",
+    "event_type": "urban agriculture,community workshop",
+    "lat": 40.7032,
+    "lon": -74.015
+  },
+  {
+    "title": "Yoga in the Park",
+    "time": "2026-08-29T14:00:00Z/2026-08-29T15:00:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/29/yoga-in-the-park",
+    "location": "East River Picnic Area, Randall's Island Park, Manhattan",
+    "event_type": "yoga,outdoor fitness class",
+    "lat": 40.7932,
+    "lon": -73.9214
+  },
+  {
+    "title": "Gardening & Weeding at The Conference House Garden",
+    "time": "2026-08-29T14:00:00Z/2026-08-29T16:00:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/29/gardening-weeding-at-the-conference-house-garden",
+    "location": "Conference House Museum in Conference House Park (7455 Hylan Blvd), Staten Island",
+    "event_type": "gardening,volunteer community event",
+    "lat": 40.5031,
+    "lon": -74.2514
+  },
+  {
+    "title": "Summer on the Hudson: Meet the Fleet",
+    "time": "2026-08-29T14:00:00Z/2026-08-29T16:00:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/29/summer-on-the-hudson-meet-the-fleet",
+    "location": "95th St. Compost Compound in Riverside Park, Manhattan",
+    "event_type": "educational tour,behind-the-scenes open house",
+    "lat": 40.7956,
+    "lon": -73.9723
+  },
+  {
+    "title": "Goodhue Park Forest Restoration",
+    "time": "2026-08-29T14:00:00Z/2026-08-29T16:00:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/29/goodhue-park-forest-restoration",
+    "location": "Goodhue Park (Brighton Ave & Lafayette Ave), Staten Island",
+    "event_type": "volunteer,environmental stewardship",
+    "lat": 40.636,
+    "lon": -74.0952
+  },
+  {
+    "title": "Exhibition: Think Global. Act Local.",
+    "time": "2026-08-29T14:00:00Z/2026-08-29T20:00:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/29/exhibition-think-global-act-local",
+    "location": "Visitor Center at Conference House Park, Staten Island",
+    "event_type": "art exhibition,nature exhibition",
+    "lat": 40.5031,
+    "lon": -74.2513
+  },
+  {
+    "title": "Angel Nevarez & Valerie Tevere: As far as the ear can hear",
+    "time": "2026-08-29T14:00:00Z/2026-08-29T21:30:00Z",
+    "url": "https://www.wavehill.org/calendar/angel-nevarez-valerie-tevere-as-far-as-the-ear-can-hear",
+    "location": "Wave Hill, The Bronx",
+    "event_type": "sound art,media exhibition",
+    "lat": 40.8978,
+    "lon": -73.9122
+  },
+  {
+    "title": "Saturday Family Storytime",
+    "time": "2026-08-29T15:00:00Z/2026-08-29T15:30:00Z",
+    "url": "https://www.nypl.org/events/programs/2026/08/29/saturday-family-storytime",
+    "location": "Riverdale Library, Bronx",
+    "event_type": "children's storytime,family activity",
+    "lat": 40.9036,
+    "lon": -73.9018
+  },
+  {
+    "title": "Dance in the Park: Soca",
+    "time": "2026-08-29T15:00:00Z/2026-08-29T15:45:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/29/dance-in-the-park-soca",
+    "location": "East River Picnic Area, Randall's Island Park, Manhattan",
+    "event_type": "dance fitness class",
+    "lat": 40.7932,
+    "lon": -73.9214
+  },
+  {
+    "title": "Shape Up NYC: Groove & Glow",
+    "time": "2026-08-29T15:00:00Z/2026-08-29T15:45:00Z",
+    "url": "https://www.nypl.org/events/programs/2026/08/29/shape-nyc-groove-glow",
+    "location": "Tompkins Square Library (Basement), Manhattan",
+    "event_type": "cardio dance class",
+    "lat": 40.7272,
+    "lon": -73.979
+  },
+  {
+    "title": "Summer Reading Closing Festival",
+    "time": "2026-08-29T15:00:00Z/2026-08-29T20:00:00Z",
+    "url": "https://www.bklynlibrary.org/calendar/summer-reading-closing-central-library-info-20260829-0100pm",
+    "location": "Central Library (10 Grand Army Plaza), Brooklyn",
+    "event_type": "community festival,literary crafts,bingo,book talks",
+    "lat": 40.6725,
+    "lon": -73.9682
+  },
+  {
+    "title": "Summer Reading for Adults: Book Exchange",
+    "time": "2026-08-29T15:00:00Z/2026-08-29T20:00:00Z",
+    "url": "https://www.bklynlibrary.org/calendar/summer-reading-adults-central-library-plaza-20260829",
+    "location": "Central Library (Plaza), Brooklyn Public Library, Brooklyn",
+    "event_type": "book swap,market",
+    "lat": 40.6725,
+    "lon": -73.9682
+  },
+  {
+    "title": "Into The Woods Hike",
+    "time": "2026-08-29T17:00:00Z/2026-08-29T18:30:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/29/into-the-woods-hike",
+    "location": "Picnic House in Prospect Park, Brooklyn",
+    "event_type": "guided walking tour,nature hike",
+    "lat": 40.6672,
+    "lon": -73.9723
+  },
+  {
+    "title": "Soul of a Paint and Jam",
+    "time": "2026-08-29T18:00:00Z/2026-08-29T23:00:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/29/soul-of-a-paint-and-jam",
+    "location": "Success Garden - East New York (449-461 Williams Avenue), Brooklyn",
+    "event_type": "arts & crafts gathering,outdoor music jam",
+    "lat": 40.6657,
+    "lon": -73.8967
+  },
+  {
+    "title": "Charlie Parker Jazz Festival: Joshua Redman / Nat Adderley Jr. / Catherine Russell / Nicole Glover / DJ Kultured Child",
+    "time": "2026-08-29T18:00:00Z/2026-08-29T23:00:00Z",
+    "url": "https://cityparksfoundation.org/events/charlie-parker-jazz-festival-joshua-redman-nat-adderley-jr-catherine-russell-nicole-glover-dj-kultured-child/",
+    "location": "Marcus Garvey Park (18 Mt. Morris Park West), Manhattan",
+    "event_type": "concert,outdoor jazz festival",
+    "lat": 40.8048,
+    "lon": -73.9442
+  },
+  {
+    "title": "Summer on the Hudson: Story Hour!",
+    "time": "2026-08-29T19:00:00Z/2026-08-29T20:00:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/29/summer-on-the-hudson-story-hour",
+    "location": "102nd Street Field House in Riverside Park, Manhattan",
+    "event_type": "children's storytime",
+    "lat": 40.7989,
+    "lon": -73.9723
+  },
+  {
+    "title": "Parallel Exit: Sunset Circus",
+    "time": "2026-08-29T21:00:00Z/2026-08-29T22:00:00Z",
+    "url": "https://bryantpark.org/activities/picnic-performances",
+    "location": "Bryant Park Lawn, Bryant Park, Manhattan",
+    "event_type": "circus,outdoor live performance",
+    "lat": 40.7536,
+    "lon": -73.9832
+  },
+  {
+    "title": "Summer on the Hudson: Vinyl Nights",
+    "time": "2026-08-29T22:00:00Z/2026-08-30T01:30:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/29/summer-on-the-hudson-vinyl-nights",
+    "location": "Pier I in Riverside Park South (West 70th Street), Manhattan",
+    "event_type": "outdoor dance party,dj event",
+    "lat": 40.7794,
+    "lon": -73.989
+  },
+  {
+    "title": "Herbert Holler's Freedom Party Outside",
+    "time": "2026-08-29T22:00:00Z/2026-08-30T02:00:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/29/herbert-hollers-freedom-party-outside",
+    "location": "Pier 6 Plaza, Brooklyn Bridge Park, Brooklyn",
+    "event_type": "concert,dance party",
+    "lat": 40.6925,
+    "lon": -73.9998
+  },
+  {
+    "title": "Inwood Canoe Club Sunday Open House",
+    "time": "2026-08-30T13:00:00Z/2026-08-30T16:30:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/30/inwood-canoe-club-sunday-open-house",
+    "location": "Inwood Canoe Club (Hudson River north of the George Washington Bridge), Manhattan",
+    "event_type": "kayaking,water sports",
+    "lat": 40.8677,
+    "lon": -73.9328
+  },
+  {
+    "title": "Urban Wildlife: Diamondback Terrapins",
+    "time": "2026-08-30T14:00:00Z/2026-08-30T15:00:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/30/urban-wildlife-diamondback-terrapins",
+    "location": "Brookfield Park (Arthur Kill Rd & Brookfield Ave), Staten Island",
+    "event_type": "wildlife observation tour,ranger-led talk",
+    "lat": 40.5645,
+    "lon": -74.161
+  },
+  {
+    "title": "It's My Park at McKinley Park",
+    "time": "2026-08-30T14:00:00Z/2026-08-30T16:00:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/30/its-my-park-at-mckinley-park",
+    "location": "McKinley Park (Meeting at 8th Ave & 66th St), Brooklyn",
+    "event_type": "volunteer park clean-up",
+    "lat": 40.631,
+    "lon": -74.0108
+  },
+  {
+    "title": "It's My Park at Sunset Park",
+    "time": "2026-08-30T14:00:00Z/2026-08-30T16:00:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/30/its-my-park-at-sunset-park",
+    "location": "Sunset Park Recreation Center in Sunset Park, Brooklyn",
+    "event_type": "community volunteering,park cleanup",
+    "lat": 40.6471,
+    "lon": -74.0023
+  },
+  {
+    "title": "Family Art Project: Rolling Out the Landscape",
+    "time": "2026-08-30T14:00:00Z/2026-08-30T17:00:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/30/family-art-project-rolling-out-the-landscape",
+    "location": "Wave Hill (4900 Independence Avenue), The Bronx",
+    "event_type": "art workshop,family craft activity",
+    "lat": 40.8978,
+    "lon": -73.9122
+  },
+  {
+    "title": "Dig! Plant! Grow! Pickle Party",
+    "time": "2026-08-30T14:00:00Z/2026-08-30T21:00:00Z",
+    "url": "https://www.nybg.org/event/dig-plant-grow/dig-plant-grow-pickle-party/",
+    "location": "Edible Academy at New York Botanical Garden, The Bronx",
+    "event_type": "gardening,culinary",
+    "lat": 40.8631,
+    "lon": -73.8812
+  },
+  {
+    "title": "Back to School Family Fun Day",
+    "time": "2026-08-30T16:00:00Z/2026-08-30T19:00:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/30/back-to-school-family-fun-day",
+    "location": "Carmine Carro Community Center in Marine Park (3000 Fillmore Ave), Brooklyn",
+    "event_type": "community fair,family festival",
+    "lat": 40.6074,
+    "lon": -73.9317
+  },
+  {
+    "title": "Garden Highlights Walk",
+    "time": "2026-08-30T17:00:00Z/2026-08-30T17:30:00Z",
+    "url": "https://www.wavehill.org/calendar/garden-highlights-walk",
+    "location": "Wave Hill (Perkins Visitor Center), Bronx",
+    "event_type": "guided botanical walking tour",
+    "lat": 40.8978,
+    "lon": -73.9123
+  },
+  {
+    "title": "Nature Exploration Hike",
+    "time": "2026-08-30T17:00:00Z/2026-08-30T18:30:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/30/nature-exploration-hike",
+    "location": "Queensbridge Park (Vernon Blvd & 41st Ave entrance), Queens",
+    "event_type": "walking tour,guided nature hike",
+    "lat": 40.758,
+    "lon": -73.945
+  },
+  {
+    "title": "Chess for Adults",
+    "time": "2026-08-30T17:00:00Z/2026-08-30T19:00:00Z",
+    "url": "https://www.bklynlibrary.org/calendar/chess-adults-bay-ridge-library-meeting-20260830",
+    "location": "Bay Ridge Library (Meeting Room), Brooklyn",
+    "event_type": "board game,meetup",
+    "lat": 40.6258,
+    "lon": -74.0305
+  },
+  {
+    "title": "Sprinkler Jam with Hila the Earth",
+    "time": "2026-08-30T18:00:00Z/2026-08-30T19:30:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/30/sprinkler-jam-with-hila-the-earth",
+    "location": "Anne Loftus Playground in Fort Tryon Park, Manhattan",
+    "event_type": "family dj party,water play event",
+    "lat": 40.8622,
+    "lon": -73.9283
+  },
+  {
+    "title": "Jazz in the Park at Ralph Ellison",
+    "time": "2026-08-30T18:00:00Z/2026-08-30T21:00:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/30/jazz-in-the-park-at-ralph-ellison",
+    "location": "Ralph Ellison Plaza (Riverside Dr & W 150th St), Manhattan",
+    "event_type": "outdoor live concert",
+    "lat": 40.8302,
+    "lon": -73.9482
+  },
+  {
+    "title": "Battle of Brooklyn: 250th Anniversary",
+    "time": "2026-08-30T19:00:00Z/2026-08-30T20:30:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/30/battle-of-brooklyn-250th-anniversary",
+    "location": "East 4th Street Community Garden (Windsor Terrace/Kensington), Brooklyn",
+    "event_type": "history lecture,commemorative panel",
+    "lat": 40.6471,
+    "lon": -73.9774
+  },
+  {
+    "title": "The Charlie Parker Jazz Festival: Ravi Coltrane / Billy Hart Quartet / Kassa Overall / Vanisha Gould",
+    "time": "2026-08-30T19:00:00Z/2026-08-30T23:00:00Z",
+    "url": "https://cityparksfoundation.org/events/the-charlie-parker-jazz-festival-ravi-coltrane-billy-hart-quartet-kassa-overall-vanisha-gould/",
+    "location": "Tompkins Square Park (E 10th St), Manhattan",
+    "event_type": "outdoor concert,jazz festival",
+    "lat": 40.7265,
+    "lon": -73.9818
+  },
+  {
+    "title": "Sungazing in the Park",
+    "time": "2026-08-30T20:30:00Z/2026-08-30T22:00:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/30/sungazing-in-the-park",
+    "location": "Cloisters Lawn in Fort Tryon Park, Manhattan",
+    "event_type": "astronomy workshop,solar observation",
+    "lat": 40.8649,
+    "lon": -73.9317
+  },
+  {
+    "title": "Game/Movie Night at Fort Totten: Luca",
+    "time": "2026-08-30T22:00:00Z/2026-08-31T03:00:00Z",
+    "url": "https://www.nycgovparks.org/events/2026/08/30/gamemovie-night-at-fort-totten-luca",
+    "location": "Fort Totten Park Lawn / Parade Grounds, Queens",
+    "event_type": "outdoor film screening,community games",
+    "lat": 40.7918,
+    "lon": -73.7749
   }
 ]
