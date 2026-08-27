@@ -1,3 +1,5 @@
+//https://sidewalk-gamma.vercel.app/
+
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./styles.css";
@@ -136,16 +138,15 @@ app.innerHTML = `
     <div class="app-frame">
       <header class="topbar">
         <div class="brand">
-          <span class="brand-mark">S</span>
-          <span>sidewalk</span>
+          <span>Sidewalk</span>
         </div>
-        <div id="mode-label" class="mode-label">Vibe planner</div>
+        <div id="mode-label" class="mode-label">Finder</div>
       </header>
 
       <main id="page-one" class="page active" aria-label="Weekend planner">
         <section class="hero">
-          <div class="kicker">A better kind of plan</div>
-          <h1>What’s your vibe<br />this weekend?</h1>
+          <div class="kicker">Find your weekend</div>
+          <h1>What's your plan<br />this weekend?</h1>
           <p class="hero-copy">
             Give Sidewalk the loose version. Cheap. Outdoors. Somewhere quiet.
             A weird museum. Your exact address is optional, but the more context

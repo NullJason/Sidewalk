@@ -7,7 +7,7 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 
-  --paper: #fbf7ef;
+  --paper: #ffffff;
   --paper-2: #efe7d7;
   --ink: #1e211d;
   --muted: #6d6b62;
@@ -27,10 +27,17 @@ html, body, #app {
 
 body {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 12% 8%, rgba(201,109,54,.10), transparent 25rem),
-    radial-gradient(circle at 90% 30%, rgba(49,90,67,.10), transparent 28rem),
-    var(--paper);
+  background-color: #f4efe5;
+  background-image:
+    linear-gradient(
+      rgba(244, 239, 229, 0.863),
+      rgba(244, 239, 229, 0.72)
+    ),
+    url("/sidewalkbg.png");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
 }
 
 button, input, textarea { font: inherit; }
@@ -48,7 +55,7 @@ button {
 .app-frame {
   min-height: calc(100vh - 44px);
   border: 1px solid var(--line);
-  background: rgba(251,247,239,.82);
+  background: rgba(251,247,239,.4);
   box-shadow: var(--shadow);
   overflow: hidden;
 }
@@ -70,16 +77,6 @@ button {
   letter-spacing: -.03em;
 }
 
-.brand-mark {
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--moss);
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  color: var(--moss);
-  font-size: 15px;
-}
 
 .mode-label {
   color: var(--muted);
@@ -118,7 +115,7 @@ button {
 h1 {
   margin: 0;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(46px, 7vw, 92px);
+  font-size: clamp(46px, 7vw, 62px);
   line-height: .95;
   letter-spacing: -.055em;
   font-weight: 500;
@@ -188,7 +185,7 @@ h1 {
   padding: 0 19px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  background: transparent;
+  background: rgba(255, 251, 240, 0.753);
   color: var(--ink);
   transition: transform .18s ease, background .18s ease, border-color .18s ease;
 }
@@ -211,7 +208,7 @@ h1 {
 .btn-primary:hover { background: var(--moss-dark); }
 
 .btn-quiet {
-  background: rgba(255,255,255,.35);
+  background: rgba(255, 255, 255, 0.7);
 }
 
 .btn-icon {
