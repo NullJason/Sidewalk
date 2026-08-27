@@ -13,8 +13,23 @@ declare module "leaflet" {
     bindPopup(content: string): this;
     openPopup(): this;
   }
+  export interface MarkerOptions {
+    icon?: Icon;
+  }
+  export interface IconOptions {
+    iconUrl: string;
+    iconSize?: [number, number];
+    iconAnchor?: [number, number];
+    popupAnchor?: [number, number];
+    shadowUrl?: string;
+  }
+  
+  export class Icon {
+    constructor(options: IconOptions);
+  }
   export function map(element: string | HTMLElement, options?: unknown): Map;
   export function tileLayer(url: string, options?: unknown): { addTo(map: Map): unknown };
   export function layerGroup(): LayerGroup;
-  export function marker(position: [number, number]): Marker;
+  export function marker(position: [number, number], options? : MarkerOptions): Marker;
+  export function icon(options: IconOptions): Icon;
 }
