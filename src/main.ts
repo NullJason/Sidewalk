@@ -229,9 +229,14 @@ function normalizeEvents(value: unknown): EventItem[] {
     .filter((event): event is EventItem => Boolean(event));
 }
 
+// Longer than the server's own Gemini timeout, deliberately. /api/plan spends most of
+// its time in url_context fetching a page per candidate — measured around 30s — and a
+// client that gave up first would turn a good plan into "could not reach the server".
+const REQUEST_TIMEOUT_MS = 90_000;
+
 async function fetchJson(input: string, init: RequestInit = {}): Promise<unknown> {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 25_000);
+  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
     const response = await fetch(input, {
@@ -322,6 +327,24 @@ function revealOnMap(event: EventItem): void {
   map.setView([event.lat, event.lon], 15, { animate: true });
 }
 
+// `event_type` is comma-joined when an event carries several ("fitness,outdoor
+// fitness"), so one badge per type. An event with no types renders no badge row
+// at all rather than an empty one.
+function renderTypeTags(eventType: string): string {
+  const types = eventType
+    .split(",")
+    .map((type) => type.trim())
+    .filter(Boolean);
+
+  if (!types.length) return "";
+
+  const tags = types
+    .map((type) => `<span class="event-tag">${escapeHtml(type)}</span>`)
+    .join("");
+
+  return `<div class="event-tags">${tags}</div>`;
+}
+
 function renderEventList(): void {
   const events = currentEvents;
   eventCount.textContent = `${events.length} event${events.length === 1 ? "" : "s"}`;
@@ -338,21 +361,36 @@ function renderEventList(): void {
   eventsScroll.innerHTML = events.map((event, index) => {
     const hasPin = hasCoordinates(event);
 
-    return `
-    <article class="event-card" data-event-id="${event.id}">
-      <button class="event-summary" type="button" aria-expanded="false">
+    // Surprise Me events carry no description/why, and an event can arrive with no
+    // coordinates, so the detail body can be empty. When it is, the card drops the
+    // chevron and the panel entirely rather than expanding onto nothing.
+    const hasDetail = Boolean(event.description || event.why || hasPin);
+
+    const summary = `
         <div>
           <div class="event-title">${index + 1}. ${escapeHtml(event.title)}</div>
           <div class="event-location">${escapeHtml(event.location)}</div>
           <div class="event-time">${escapeHtml(formatTime(event.time))}</div>
+          ${renderTypeTags(event.event_type)}
         </div>
-        <div class="chevron" aria-hidden="true">⌄</div>
-      </button>
-      <div class="event-detail">
+        ${hasDetail ? `<div class="chevron" aria-hidden="true">⌄</div>` : ""}`;
+
+    return `
+    <article class="event-card" data-event-id="${event.id}">
+      ${
+        hasDetail
+          ? `<button class="event-summary" type="button" aria-expanded="false">${summary}</button>`
+          : `<div class="event-summary is-static">${summary}</div>`
+      }
+      ${
+        hasDetail
+          ? `<div class="event-detail">
         ${event.description ? `<p class="event-description">${escapeHtml(event.description)}</p>` : ""}
         ${event.why ? `<div class="event-fit">${escapeHtml(event.why)}</div>` : ""}
         ${hasPin ? `<button class="map-btn" type="button" data-map-event="${event.id}">Reveal on map</button>` : ""}
-      </div>
+      </div>`
+          : ""
+      }
     </article>
   `;
   }).join("");
@@ -369,8 +407,10 @@ eventsScroll.addEventListener("click", (event) => {
   const card = target.closest<HTMLElement>(".event-card");
   if (!card) return;
 
-  const summary = target.closest<HTMLButtonElement>(".event-summary");
-  if (summary) {
+  const summary = target.closest<HTMLElement>(".event-summary");
+  // A card with nothing to reveal renders its summary as a static div and no
+  // detail panel, so there is nothing to toggle.
+  if (summary && !summary.classList.contains("is-static")) {
     const willOpen = !card.classList.contains("open");
     card.classList.toggle("open", willOpen);
     summary.setAttribute("aria-expanded", String(willOpen));
