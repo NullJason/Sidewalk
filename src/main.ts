@@ -15,128 +15,26 @@ const sidewalkMarkerIcon = L.icon({
 type UUID = string;
 
 interface EventItem {
-  id: UUID;
+  id: number;
   title: string;
+  time: string; // ISO 8601 interval, "start/end"
+  url: string;
   location: string;
-  description: string;
-  time: string;
-  fit: string;
+  event_type: string; // comma-joined when an event has several
   lat?: number;
   lon?: number;
-  source: "gemini" | "db" | "csv";
+  description?: string; // /api/plan only — generated per response, never stored
+  why?: string; // /api/plan only — generated per response, never stored
 }
 
-interface WeekendPlan {
-  id: UUID;
-  prompt: string;
-  createdAt: string;
-  events: EventItem[];
+interface PlanResponse {
+  planTitle: string;
+  stops: EventItem[];
 }
 
-interface GeminiPlanResponse {
-  weekendTitle?: string;
-  events: Array<{
-    title: string;
-    location: string;
-    description: string;
-    time: string;
-    fit: string;
-  }>;
-}
-
-interface AppConfig {
-  geminiEndpoint: string;
-  supabaseUrl?: string;
-  supabaseAnonKey?: string;
-}
-
-const config: AppConfig = {
-  geminiEndpoint: import.meta.env.VITE_GEMINI_ENDPOINT || "/api/plan",
-  supabaseUrl: import.meta.env.VITE_SUPABASE_URL,
-  supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-};
-
-
-class SupabaseRestClient {
-  constructor(
-    private readonly baseUrl: string,
-    private readonly anonKey: string
-  ) {}
-
-  private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/rest/v1/${path}`, {
-      ...init,
-      headers: {
-        apikey: this.anonKey,
-        Authorization: `Bearer ${this.anonKey}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        ...(init.headers ?? {})
-      }
-    });
-
-    if (!response.ok) {
-      const body = await response.text().catch(() => "");
-      throw new Error(`Database request failed (${response.status})${body ? `: ${body.slice(0, 240)}` : ""}`);
-    }
-
-    if (response.status === 204) return undefined as T;
-    const body = await response.text();
-    if (!body.trim()) return undefined as T;
-
-    try {
-      return JSON.parse(body) as T;
-    } catch {
-      throw new Error("Database returned an invalid JSON response.");
-    }
-  }
-
-  select<T>(path: string): Promise<T> {
-    return this.request<T>(path, { method: "GET" });
-  }
-
-  insert<T>(path: string, body: unknown): Promise<T> {
-    return this.request<T>(path, {
-      method: "POST",
-      headers: { Prefer: "return=minimal" },
-      body: JSON.stringify(body)
-    });
-  }
-
-  update<T>(path: string, body: unknown): Promise<T> {
-    return this.request<T>(path, {
-      method: "PATCH",
-      headers: { Prefer: "return=minimal" },
-      body: JSON.stringify(body)
-    });
-  }
-}
-
-const PLAN_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    weekendTitle: { type: "string" },
-    events: {
-      type: "array",
-      minItems: 1,
-      maxItems: 6,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          title: { type: "string" },
-          location: { type: "string" },
-          description: { type: "string" },
-          time: { type: "string" },
-          fit: { type: "string" }
-        },
-        required: ["title", "location", "description", "time", "fit"]
-      }
-    }
-  },
-  required: ["events"]
-} as const;
+const PLAN_ENDPOINT = "/api/plan";
+const SURPRISE_ENDPOINT = "/api/surprise";
+const EVENTS_ENDPOINT = "/api/events";
 
 const app = document.querySelector<HTMLDivElement>("#app");
 if (!app) throw new Error("App root was not found.");
@@ -148,7 +46,10 @@ app.innerHTML = `
         <div class="brand">
           <span>Sidewalk</span>
         </div>
-        <div id="mode-label" class="mode-label">Finder</div>
+        <div class="topbar-meta">
+          <div id="events-badge" class="events-badge" role="status" aria-live="polite"></div>
+          <div id="mode-label" class="mode-label">Finder</div>
+        </div>
       </header>
 
       <main id="page-one" class="page active" aria-label="Weekend planner">
@@ -230,6 +131,7 @@ const $ = <T extends Element>(selector: string): T => {
 const pageOne = $<HTMLElement>("#page-one");
 const pageTwo = $<HTMLElement>("#page-two");
 const modeLabel = $<HTMLElement>("#mode-label");
+const eventsBadge = $<HTMLElement>("#events-badge");
 const promptInput = $<HTMLTextAreaElement>("#prompt");
 const charCount = $<HTMLElement>("#char-count");
 const planForm = $<HTMLFormElement>("#plan-form");
@@ -244,17 +146,18 @@ const eventCount = $<HTMLElement>("#event-count");
 const mapperTitle = $<HTMLElement>("#mapper-title");
 const toast = $<HTMLElement>("#toast");
 
-let currentPlan: WeekendPlan | null = null;
-let plansCache: WeekendPlan[] = [];
+let currentEvents: EventItem[] = [];
+
+/**
+ * What produced the list currently on screen, so "Refresh events" can run it again
+ * instead of re-rendering the array it already has. A plan carries its vibe: refreshing
+ * a weekend the user described has to ask for that weekend again, not a random one.
+ */
+type LastView = { kind: "plan"; prompt: string } | { kind: "surprise" };
+let lastView: LastView | null = null;
 let map: L.Map | null = null;
 let mapLayer: L.LayerGroup | null = null;
-let supabase: SupabaseRestClient | null = null;
-let fallbackEvents: EventItem[] = [];
 let toastTimer: number | undefined;
-
-if (config.supabaseUrl && config.supabaseAnonKey) {
-  supabase = new SupabaseRestClient(config.supabaseUrl, config.supabaseAnonKey);
-}
 
 const escapeHtml = (value: string): string =>
   value
@@ -264,9 +167,20 @@ const escapeHtml = (value: string): string =>
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 
-const uuid = (): UUID =>
-  globalThis.crypto?.randomUUID?.() ??
-  `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+// `time` is an ISO interval, "start/end". Every display path takes the start.
+function formatTime(interval: string): string {
+  const start = interval.split("/")[0] ?? "";
+  const parsed = new Date(start);
+  if (Number.isNaN(parsed.getTime())) return interval || "Flexible";
+
+  return parsed.toLocaleString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
 
 function setStatus(message: string, type: "" | "error" | "success" = ""): void {
   status.textContent = message;
@@ -294,299 +208,178 @@ function setPage(page: "one" | "two"): void {
   }
 }
 
-function normalizeEvent(raw: {
-  title?: unknown;
-  location?: unknown;
-  description?: unknown;
-  time?: unknown;
-  fit?: unknown;
-}, source: EventItem["source"]): EventItem | null {
+function normalizeEvent(value: unknown): EventItem | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+
+  const id = typeof raw.id === "number" ? raw.id : Number(raw.id);
   const title = typeof raw.title === "string" ? raw.title.trim() : "";
-  const location = typeof raw.location === "string" ? raw.location.trim() : "";
-  const description = typeof raw.description === "string" ? raw.description.trim() : "";
   const time = typeof raw.time === "string" ? raw.time.trim() : "";
-  const fit = typeof raw.fit === "string" ? raw.fit.trim() : "";
+  const url = typeof raw.url === "string" ? raw.url.trim() : "";
+  const location = typeof raw.location === "string" ? raw.location.trim() : "";
+  const eventType = typeof raw.event_type === "string" ? raw.event_type.trim() : "";
 
-  if (!title || !location || !description) return null;
+  if (!Number.isFinite(id) || !title || !time || !url || !location) return null;
 
-  return {
-    id: uuid(),
+  const event: EventItem = {
+    id,
     title: title.slice(0, 180),
+    time,
+    url,
     location: location.slice(0, 240),
-    description: description.slice(0, 1200),
-    time: time.slice(0, 100) || "Flexible",
-    fit: fit.slice(0, 500) || "Fits the vibe you gave Sidewalk.",
-    source
+    event_type: eventType
   };
+
+  // lat/lon are nullable everywhere: an event without them lists and plans
+  // normally, it just has no pin.
+  if (typeof raw.lat === "number" && Number.isFinite(raw.lat)) event.lat = raw.lat;
+  if (typeof raw.lon === "number" && Number.isFinite(raw.lon)) event.lon = raw.lon;
+
+  if (typeof raw.description === "string" && raw.description.trim()) {
+    event.description = raw.description.trim().slice(0, 1200);
+  }
+  if (typeof raw.why === "string" && raw.why.trim()) {
+    event.why = raw.why.trim().slice(0, 500);
+  }
+
+  return event;
 }
 
-function sanitizeGeminiResponse(value: unknown): GeminiPlanResponse {
-  if (!value || typeof value !== "object") return { events: [] };
-  const candidate = value as Record<string, unknown>;
-  const rawEvents = Array.isArray(candidate.events) ? candidate.events : [];
-
-  const events = rawEvents
-    .map((entry) => normalizeEvent(entry as GeminiPlanResponse["events"][number], "gemini"))
-    .filter((event): event is EventItem => Boolean(event))
-    .slice(0, 6)
-    .map((event) => ({
-      title: event.title,
-      location: event.location,
-      description: event.description,
-      time: event.time,
-      fit: event.fit
-    }));
-
-  return {
-    weekendTitle:
-      typeof candidate.weekendTitle === "string" ? candidate.weekendTitle.trim().slice(0, 120) : undefined,
-    events
-  };
+function normalizeEvents(value: unknown): EventItem[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map(normalizeEvent)
+    .filter((event): event is EventItem => Boolean(event));
 }
 
-async function callGemini(prompt: string): Promise<GeminiPlanResponse> {
+// Longer than the server's own Gemini timeout, deliberately. /api/plan spends most of
+// its time in url_context fetching a page per candidate — measured around 30s — and a
+// client that gave up first would turn a good plan into "could not reach the server".
+const REQUEST_TIMEOUT_MS = 90_000;
+
+async function fetchJson(input: string, init: RequestInit = {}): Promise<unknown> {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), 25_000);
+  const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
-    const response = await fetch(config.geminiEndpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json"
-      },
-      body: JSON.stringify({
-        model: "gemini-2.5-flash",
-        prompt,
-        responseSchema: PLAN_SCHEMA,
-        responseMimeType: "application/json"
-      }),
+    const response = await fetch(input, {
+      ...init,
+      headers: { Accept: "application/json", ...(init.headers ?? {}) },
       signal: controller.signal
     });
 
     if (!response.ok) {
       const body = await response.text().catch(() => "");
-      throw new Error(`Gemini endpoint returned ${response.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
+      throw new Error(`${input} returned ${response.status}${body ? `: ${body.slice(0, 200)}` : ""}`);
     }
 
-    const payload: unknown = await response.json();
-
-    // Supports either {events: [...]} or common wrappers such as {data: {events: [...]}}.
-    if (payload && typeof payload === "object" && "data" in payload) {
-      return sanitizeGeminiResponse((payload as { data: unknown }).data);
-    }
-
-    return sanitizeGeminiResponse(payload);
+    return await response.json();
   } finally {
     window.clearTimeout(timeout);
   }
 }
 
-function buildGeminiPrompt(userVibe: string): string {
-  return `
-You are Sidewalk, a local-weekend itinerary curator.
+// POST /api/plan always answers 200 with a renderable body — the server owns the
+// Gemini key, the prompt, and the fallback. There is no failure case on this side.
+async function requestPlan(prompt: string, exclude: number[] = []): Promise<PlanResponse> {
+  const payload = await fetchJson(PLAN_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt, exclude })
+  });
 
-Create a coherent Saturday-first weekend plan from the user's loose request below.
-
-User request:
-"${userVibe}"
-
-Requirements:
-- Return 3 to 6 real, geographically sensible events.
-- Prefer low-friction plans when the user asks for solitude.
-- Respect stated price, outdoor/indoor, accessibility, timing, neighborhood, food, transportation, and social-energy preferences.
-- Do not invent impossible combinations or duplicate the same event.
-- Each event must have a concise title, concrete location, useful time, plain-language description, and "fit" explaining why it matches the user's vibe.
-- Prefer public places, parks, markets, cultural venues, walks, viewpoints, bookstores, neighborhood spots, and other plausible local experiences.
-- Return ONLY valid JSON matching the supplied response schema.
-`.trim();
-}
-
-async function loadCsvFallback(): Promise<EventItem[]> {
-  if (fallbackEvents.length) return fallbackEvents;
-
-  const response = await fetch("/demo-events.csv", { cache: "no-store" });
-  if (!response.ok) throw new Error(`Could not load demo-events.csv (${response.status}).`);
-
-  const text = await response.text();
-  const lines = parseCsv(text);
-  if (lines.length < 2) return [];
-
-  const headers = lines[0].map((header) => header.trim().toLowerCase());
-  const indexOf = (name: string) => headers.indexOf(name);
-
-  const titleIndex = indexOf("title");
-  const locationIndex = indexOf("location");
-  const descriptionIndex = indexOf("description");
-  const timeIndex = indexOf("time");
-
-  if ([titleIndex, locationIndex, descriptionIndex].some((index) => index < 0)) {
-    throw new Error("demo-events.csv must include title, location, description, and optionally time.");
-  }
-
-  fallbackEvents = lines.slice(1)
-    .map((row) => normalizeEvent({
-      title: row[titleIndex],
-      location: row[locationIndex],
-      description: row[descriptionIndex],
-      time: timeIndex >= 0 ? row[timeIndex] : "Flexible",
-      fit: "Demo Sidewalk quest loaded because live planning was unavailable."
-    }, "csv"))
-    .filter((event): event is EventItem => Boolean(event));
-
-  return fallbackEvents;
-}
-
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = "";
-  let quoted = false;
-
-  for (let index = 0; index < text.length; index += 1) {
-    const char = text[index];
-    const next = text[index + 1];
-
-    if (quoted) {
-      if (char === '"' && next === '"') {
-        cell += '"';
-        index += 1;
-      } else if (char === '"') {
-        quoted = false;
-      } else {
-        cell += char;
-      }
-      continue;
-    }
-
-    if (char === '"') {
-      quoted = true;
-    } else if (char === ",") {
-      row.push(cell);
-      cell = "";
-    } else if (char === "\n") {
-      row.push(cell);
-      rows.push(row);
-      row = [];
-      cell = "";
-    } else if (char !== "\r") {
-      cell += char;
-    }
-  }
-
-  if (cell.length || row.length) {
-    row.push(cell);
-    rows.push(row);
-  }
-
-  return rows.filter((currentRow) => currentRow.some((value) => value.trim().length > 0));
-}
-
-async function fetchRecentPlans(): Promise<WeekendPlan[]> {
-  if (!supabase) return plansCache;
-
-  type EventRow = {
-    id: string; title: string; location: string; description: string; time?: string; fit?: string;
-    lat?: number | null; lon?: number | null; source?: string | null;
-  };
-  type PlanRow = {
-    id: string; prompt?: string | null; created_at?: string | null; sidewalk_events?: EventRow[];
-  };
-
-  const rows = await supabase.select<PlanRow[]>(
-    "sidewalk_plans?select=id,prompt,created_at,sidewalk_events(id,title,location,description,time,fit,lat,lon,source)&order=created_at.desc&limit=20"
-  );
-
-  return rows.map((row) => ({
-    id: String(row.id),
-    prompt: String(row.prompt ?? ""),
-    createdAt: String(row.created_at ?? new Date().toISOString()),
-    events: (row.sidewalk_events ?? []).map((event) => ({
-      id: String(event.id), title: String(event.title), location: String(event.location),
-      description: String(event.description), time: String(event.time ?? "Flexible"), fit: String(event.fit ?? ""),
-      lat: typeof event.lat === "number" ? event.lat : undefined,
-      lon: typeof event.lon === "number" ? event.lon : undefined,
-      source: event.source === "db" || event.source === "csv" ? event.source : "gemini"
-    }))
-  }));
-}
-
-async function fetchRandomCachedQuest(): Promise<WeekendPlan | null> {
-  if (!supabase) {
-    if (!plansCache.length) return null;
-    return plansCache[Math.floor(Math.random() * plansCache.length)] ?? null;
-  }
-
-  type QuestRow = {
-    id: string; prompt?: string | null; title: string; location: string; description: string;
-    time?: string | null; fit?: string | null; lat?: number | null; lon?: number | null;
-  };
-
-  const rows = await supabase.select<QuestRow[]>(
-    "sidewalk_quests?select=id,prompt,title,location,description,time,fit,lat,lon&limit=100"
-  );
-  if (!rows.length) return null;
-
-  const chosen = rows[Math.floor(Math.random() * rows.length)];
-  const event = normalizeEvent(chosen, "db");
-  if (!event) return null;
-  if (typeof chosen.lat === "number") event.lat = chosen.lat;
-  if (typeof chosen.lon === "number") event.lon = chosen.lon;
+  const candidate = (payload ?? {}) as Record<string, unknown>;
 
   return {
-    id: uuid(), prompt: String(chosen.prompt ?? "Surprise me"), createdAt: new Date().toISOString(), events: [event]
+    planTitle:
+      typeof candidate.planTitle === "string" && candidate.planTitle.trim()
+        ? candidate.planTitle.trim().slice(0, 120)
+        : "Your weekend",
+    stops: normalizeEvents(candidate.stops)
   };
 }
 
-async function persistPlan(plan: WeekendPlan): Promise<void> {
-  plansCache = [plan, ...plansCache.filter((entry) => entry.id !== plan.id)].slice(0, 20);
-  if (!supabase) return;
+// GET /api/surprise returns stored events straight from SQLite, with no
+// description/why. It may answer with a single event or a short list.
+async function requestSurprise(exclude: number[] = []): Promise<EventItem[]> {
+  const query = exclude.length ? `?exclude=${exclude.join(",")}` : "";
+  const payload = await fetchJson(`${SURPRISE_ENDPOINT}${query}`);
+  if (Array.isArray(payload)) return normalizeEvents(payload);
 
-  await supabase.insert("sidewalk_plans", {
-    id: plan.id, prompt: plan.prompt, created_at: plan.createdAt
-  });
-
-  const rows = plan.events.map((event) => ({
-    id: event.id, plan_id: plan.id, title: event.title, location: event.location,
-    description: event.description, time: event.time, fit: event.fit,
-    lat: event.lat ?? null, lon: event.lon ?? null, source: event.source
-  }));
-
-  await supabase.insert("sidewalk_events", rows);
+  const single = normalizeEvent(payload);
+  return single ? [single] : [];
 }
 
-async function geocode(location: string): Promise<{ lat: number; lon: number } | null> {
-  const cacheKey = `sidewalk-geocode:${location.trim().toLowerCase()}`;
-  const cached = localStorage.getItem(cacheKey);
-  if (cached) {
-    try {
-      const parsed = JSON.parse(cached) as { lat: number; lon: number };
-      if (Number.isFinite(parsed.lat) && Number.isFinite(parsed.lon)) return parsed;
-    } catch {
-      localStorage.removeItem(cacheKey);
-    }
+interface EventsSummary {
+  count: number;
+  lastCheckedAt: string | null; // null until a refresh run has completed once
+}
+
+// GET /api/events is the whole stored list plus when discovery last finished. Only the
+// size of the list is read here — the badge reports what the database holds, so it
+// counts rows rather than the subset this client would manage to render.
+async function requestEventsSummary(): Promise<EventsSummary> {
+  const payload = await fetchJson(EVENTS_ENDPOINT);
+  const raw = (payload ?? {}) as Record<string, unknown>;
+
+  return {
+    count: Array.isArray(raw.events) ? raw.events.length : 0,
+    lastCheckedAt: typeof raw.lastCheckedAt === "string" ? raw.lastCheckedAt : null
+  };
+}
+
+const RELATIVE_TIME = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+// "2 hours ago" rather than a timestamp: the badge exists to answer "is this recent?",
+// and a reader should not have to do the subtraction themselves to find out.
+function formatRelative(iso: string): string | null {
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return null;
+
+  const delta = at - Date.now();
+  const size = Math.abs(delta);
+
+  if (size < MINUTE_MS) return "just now";
+  if (size < HOUR_MS) return RELATIVE_TIME.format(Math.round(delta / MINUTE_MS), "minute");
+  if (size < DAY_MS) return RELATIVE_TIME.format(Math.round(delta / HOUR_MS), "hour");
+
+  return RELATIVE_TIME.format(Math.round(delta / DAY_MS), "day");
+}
+
+function renderEventsBadge(summary: EventsSummary): void {
+  const events = `${summary.count} event${summary.count === 1 ? "" : "s"}`;
+  const refreshed = summary.lastCheckedAt ? formatRelative(summary.lastCheckedAt) : null;
+
+  // No timestamp means no refresh has ever completed against this database — a fresh
+  // seed, normally. Saying so is better than dressing the seed date up as a check.
+  eventsBadge.textContent = refreshed
+    ? `${events} · last refreshed ${refreshed}`
+    : `${events} · not refreshed yet`;
+
+  eventsBadge.title = summary.lastCheckedAt
+    ? new Date(summary.lastCheckedAt).toLocaleString()
+    : "Run `npm run refresh` to pull in this weekend's events.";
+}
+
+// The badge is a claim about the data, so a badge that cannot reach the server makes no
+// claim at all — it empties rather than showing a stale or apologetic one.
+async function loadEventsBadge(): Promise<void> {
+  try {
+    renderEventsBadge(await requestEventsSummary());
+  } catch (error) {
+    console.error(error);
+    eventsBadge.textContent = "";
   }
+}
 
-  const url = new URL("https://nominatim.openstreetmap.org/search");
-  url.searchParams.set("format", "jsonv2");
-  url.searchParams.set("limit", "1");
-  url.searchParams.set("q", location);
-
-  const response = await fetch(url, {
-    headers: { "Accept": "application/json" }
-  });
-
-  if (!response.ok) return null;
-
-  const results = await response.json() as Array<{ lat?: string; lon?: string }>;
-  const first = results[0];
-  if (!first?.lat || !first.lon) return null;
-
-  const point = { lat: Number(first.lat), lon: Number(first.lon) };
-  if (!Number.isFinite(point.lat) || !Number.isFinite(point.lon)) return null;
-
-  localStorage.setItem(cacheKey, JSON.stringify(point));
-  return point;
+// lat/lon are always both set or both absent, so one predicate answers "can this
+// event be pinned" for every caller.
+function hasCoordinates(event: EventItem): event is EventItem & { lat: number; lon: number } {
+  return event.lat !== undefined && event.lon !== undefined;
 }
 
 function initializeMap(): void {
@@ -599,32 +392,19 @@ function initializeMap(): void {
 
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors'
+    attribution: "&copy; OpenStreetMap contributors"
   }).addTo(map);
 
   mapLayer = L.layerGroup().addTo(map);
 }
 
-async function revealOnMap(event: EventItem): Promise<void> {
+// Coordinates are resolved once at write time and stored on the row. The browser
+// reads them as given, geocodes nothing, and caches nothing.
+function revealOnMap(event: EventItem): void {
+  if (!hasCoordinates(event)) return;
+
   initializeMap();
   if (!map || !mapLayer) return;
-
-  if (event.lat === undefined || event.lon === undefined) {
-    showToast("Finding that location…");
-    const point = await geocode(event.location);
-
-    if (!point) {
-      showToast("Could not locate this event. Try a more specific address.");
-      return;
-    }
-
-    event.lat = point.lat;
-    event.lon = point.lon;
-
-    if (supabase) {
-      await supabase.update(`sidewalk_events?id=eq.${encodeURIComponent(event.id)}`, { lat: point.lat, lon: point.lon });
-    }
-  }
 
   mapLayer.clearLayers();
 
@@ -637,71 +417,90 @@ async function revealOnMap(event: EventItem): Promise<void> {
   map.setView([event.lat, event.lon], 15, { animate: true });
 }
 
-function getRecentEvents(): EventItem[] {
-  const seen = new Set<string>();
-  const events: EventItem[] = [];
+// `event_type` is comma-joined when an event carries several ("fitness,outdoor
+// fitness"), so one badge per type. An event with no types renders no badge row
+// at all rather than an empty one.
+function renderTypeTags(eventType: string): string {
+  const types = eventType
+    .split(",")
+    .map((type) => type.trim())
+    .filter(Boolean);
 
-  for (const plan of [currentPlan, ...plansCache]) {
-    if (!plan) continue;
-    for (const event of plan.events) {
-      const key = `${event.title.toLowerCase()}|${event.location.toLowerCase()}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      events.push(event);
-      if (events.length >= 50) return events;
-    }
-  }
+  if (!types.length) return "";
 
-  return events;
+  const tags = types
+    .map((type) => `<span class="event-tag">${escapeHtml(type)}</span>`)
+    .join("");
+
+  return `<div class="event-tags">${tags}</div>`;
 }
 
 function renderEventList(): void {
-  const events = getRecentEvents();
+  const events = currentEvents;
   eventCount.textContent = `${events.length} event${events.length === 1 ? "" : "s"}`;
 
   if (!events.length) {
     eventsScroll.innerHTML = `
       <div class="empty-state">
-        No events yet. Return to the planner and generate a weekend, or use the demo fallback.
+        No events yet. Return to the planner and generate a weekend, or try Surprise me.
       </div>
     `;
     return;
   }
 
-  eventsScroll.innerHTML = events.map((event, index) => `
-    <article class="event-card" data-event-id="${escapeHtml(event.id)}">
-      <button class="event-summary" type="button" aria-expanded="false">
+  eventsScroll.innerHTML = events.map((event, index) => {
+    const hasPin = hasCoordinates(event);
+
+    // Surprise Me events carry no description/why, and an event can arrive with no
+    // coordinates, so the detail body can be empty. When it is, the card drops the
+    // chevron and the panel entirely rather than expanding onto nothing.
+    const hasDetail = Boolean(event.description || event.why || hasPin);
+
+    const summary = `
         <div>
           <div class="event-title">${index + 1}. ${escapeHtml(event.title)}</div>
           <div class="event-location">${escapeHtml(event.location)}</div>
-          <div class="event-time">${escapeHtml(event.time)}</div>
+          <div class="event-time">${escapeHtml(formatTime(event.time))}</div>
+          ${renderTypeTags(event.event_type)}
         </div>
-        <div class="chevron" aria-hidden="true">⌄</div>
-      </button>
-      <div class="event-detail">
-        <p class="event-description">${escapeHtml(event.description)}</p>
-        <div class="event-fit">${escapeHtml(event.fit)}</div>
-        <button class="map-btn" type="button" data-map-event="${escapeHtml(event.id)}">
-          Reveal on map
-        </button>
-      </div>
+        ${hasDetail ? `<div class="chevron" aria-hidden="true">⌄</div>` : ""}`;
+
+    return `
+    <article class="event-card" data-event-id="${event.id}">
+      ${
+        hasDetail
+          ? `<button class="event-summary" type="button" aria-expanded="false">${summary}</button>`
+          : `<div class="event-summary is-static">${summary}</div>`
+      }
+      ${
+        hasDetail
+          ? `<div class="event-detail">
+        ${event.description ? `<p class="event-description">${escapeHtml(event.description)}</p>` : ""}
+        ${event.why ? `<div class="event-fit">${escapeHtml(event.why)}</div>` : ""}
+        ${hasPin ? `<button class="map-btn" type="button" data-map-event="${event.id}">Reveal on map</button>` : ""}
+      </div>`
+          : ""
+      }
     </article>
-  `).join("");
+  `;
+  }).join("");
 }
 
-function findEvent(eventId: string): EventItem | undefined {
-  return currentPlan?.events.find((event) => event.id === eventId);
+function findEvent(eventId: number): EventItem | undefined {
+  return currentEvents.find((event) => event.id === eventId);
 }
 
-eventsScroll.addEventListener("click", async (event) => {
+eventsScroll.addEventListener("click", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
 
   const card = target.closest<HTMLElement>(".event-card");
   if (!card) return;
 
-  const summary = target.closest<HTMLButtonElement>(".event-summary");
-  if (summary) {
+  const summary = target.closest<HTMLElement>(".event-summary");
+  // A card with nothing to reveal renders its summary as a static div and no
+  // detail panel, so there is nothing to toggle.
+  if (summary && !summary.classList.contains("is-static")) {
     const willOpen = !card.classList.contains("open");
     card.classList.toggle("open", willOpen);
     summary.setAttribute("aria-expanded", String(willOpen));
@@ -709,149 +508,79 @@ eventsScroll.addEventListener("click", async (event) => {
   }
 
   const mapButton = target.closest<HTMLButtonElement>("[data-map-event]");
-  const eventId = mapButton?.dataset.mapEvent;
-  if (!eventId) return;
+  if (!mapButton?.dataset.mapEvent) return;
 
-  const item = findEvent(eventId);
+  const item = findEvent(Number(mapButton.dataset.mapEvent));
   if (!item) return;
 
-  try {
-    await revealOnMap(item);
-  } catch (error) {
-    console.error(error);
-    showToast("Map lookup failed.");
-  }
+  revealOnMap(item);
 });
 
-async function useDemoPlan(prompt = "Demo fallback"): Promise<WeekendPlan> {
-  const events = await loadCsvFallback();
-  if (!events.length) throw new Error("Demo CSV contained no usable events.");
-
-  return {
-    id: uuid(),
-    prompt,
-    createdAt: new Date().toISOString(),
-    events: events.slice(0, 4).map((event) => ({ ...event, id: uuid() }))
-  };
+function setBusy(busy: boolean): void {
+  planButton.disabled = busy;
+  mapperButton.disabled = busy;
+  surpriseButton.disabled = busy;
+  refreshButton.disabled = busy;
+  planButton.classList.toggle("loading", busy);
 }
 
-async function generatePlan(userPrompt: string): Promise<void> {
+// Submitting with nothing typed is not an error to correct — it is the Surprise Me
+// path, plus a line saying that is what happened.
+const EMPTY_PROMPT_NOTE = "No vibe given — here's a surprise instead.";
+
+async function generatePlan(userPrompt: string, exclude: number[] = []): Promise<void> {
   const trimmed = userPrompt.trim();
   if (!trimmed) {
-    setStatus("Type a vibe first, or use Surprise me.", "error");
-    promptInput.focus();
+    await surpriseMe(EMPTY_PROMPT_NOTE);
     return;
   }
 
-  planButton.disabled = true;
-  mapperButton.disabled = true;
-  surpriseButton.disabled = true;
-  planButton.classList.add("loading");
+  setBusy(true);
   setStatus("Sidewalk is mapping the vibe…");
 
   try {
-    const result = await callGemini(buildGeminiPrompt(trimmed));
+    const plan = await requestPlan(trimmed, exclude);
 
-    if (!result.events.length) {
-      throw new Error("Gemini returned no events.");
-    }
-
-    currentPlan = {
-      id: uuid(),
-      prompt: trimmed,
-      createdAt: new Date().toISOString(),
-      events: result.events.map((event) => ({
-        ...normalizeEvent(event, "gemini")!,
-        id: uuid()
-      }))
-    };
-
-    try {
-      await persistPlan(currentPlan);
-    } catch (dbError) {
-      console.warn("Plan generated but persistence failed:", dbError);
-      showToast("Plan created. Database save was unavailable.");
-    }
-
-    mapperTitle.textContent = result.weekendTitle || "Your weekend";
-    setStatus("Weekend mapped.", "success");
+    currentEvents = plan.stops;
+    lastView = { kind: "plan", prompt: trimmed };
+    mapperTitle.textContent = plan.planTitle;
+    setStatus(
+      plan.stops.length ? "Weekend mapped." : "No events matched this weekend.",
+      plan.stops.length ? "success" : "error"
+    );
     setPage("two");
   } catch (error) {
-    console.warn("Live planning failed; using CSV demo fallback.", error);
-    try {
-      currentPlan = await useDemoPlan(trimmed);
-      mapperTitle.textContent = "A Sidewalk demo route";
-      setStatus("Live planning was unavailable, so Sidewalk loaded a demo route.", "error");
-      setPage("two");
-    } catch (fallbackError) {
-      console.error(fallbackError);
-      setStatus("Could not generate a plan or load the demo events.", "error");
-    }
+    console.error(error);
+    setStatus("Could not reach the Sidewalk server.", "error");
   } finally {
-    planButton.disabled = false;
-    mapperButton.disabled = false;
-    surpriseButton.disabled = false;
-    planButton.classList.remove("loading");
+    setBusy(false);
   }
 }
 
-async function surpriseMe(): Promise<void> {
-  surpriseButton.disabled = true;
-  planButton.disabled = true;
-  mapperButton.disabled = true;
-  setStatus("Finding a cached Sidewalk quest…");
+// `doneMessage` is how the empty-prompt route above says why a surprise turned up
+// when the user pressed "Plan my weekend".
+async function surpriseMe(doneMessage = "Quest selected.", exclude: number[] = []): Promise<void> {
+  setBusy(true);
+  setStatus("Finding a Sidewalk quest…");
 
   try {
-    let quest = await fetchRandomCachedQuest();
+    const events = await requestSurprise(exclude);
 
-    if (!quest) {
-      const demo = await useDemoPlan("Surprise me");
-      quest = {
-        ...demo,
-        events: [demo.events[Math.floor(Math.random() * demo.events.length)]!]
-      };
+    if (!events.length) {
+      setStatus("No stored events yet. Run the seed and try again.", "error");
+      return;
     }
 
-    currentPlan = quest;
+    currentEvents = events;
+    lastView = { kind: "surprise" };
     mapperTitle.textContent = "A surprise sidewalk";
-    setStatus("Quest selected.", "success");
+    setStatus(doneMessage, "success");
     setPage("two");
   } catch (error) {
     console.error(error);
     setStatus("Surprise mode failed.", "error");
   } finally {
-    surpriseButton.disabled = false;
-    planButton.disabled = false;
-    mapperButton.disabled = false;
-  }
-}
-
-async function refreshFromDatabase(): Promise<void> {
-  refreshButton.disabled = true;
-  try {
-    if (!supabase) {
-      showToast("Database is not configured; showing the current plan.");
-      renderEventList();
-      return;
-    }
-
-    const plans = await fetchRecentPlans();
-    plansCache = plans;
-
-    if (plans.length) {
-      currentPlan = plans[0];
-      mapperTitle.textContent = currentPlan.events.length
-        ? "Recent Sidewalk"
-        : "Your weekend";
-    }
-
-    renderEventList();
-    showToast(plans.length ? "Recent events refreshed." : "No saved Sidewalk plans yet.");
-  } catch (error) {
-    console.error(error);
-    showToast("Could not refresh the database.");
-  } finally {
-    refreshButton.disabled = false;
+    setBusy(false);
   }
 }
 
@@ -875,37 +604,49 @@ surpriseButton.addEventListener("click", () => {
   void surpriseMe();
 });
 
-mapperButton.addEventListener("click", async () => {
-  if (!currentPlan) {
-    try {
-      if (!plansCache.length && supabase) plansCache = await fetchRecentPlans();
-      currentPlan = plansCache[0] ?? await useDemoPlan("Mapper");
-      mapperTitle.textContent = plansCache.length ? "Recent Sidewalks" : "Demo Sidewalks";
-    } catch (error) {
-      console.warn("Could not preload mapper data:", error);
-      currentPlan = await useDemoPlan("Mapper");
-      mapperTitle.textContent = "Demo Sidewalks";
-    }
-  }
+mapperButton.addEventListener("click", () => {
   setPage("two");
 });
 
 backButton.addEventListener("click", () => setPage("one"));
-refreshButton.addEventListener("click", () => void refreshFromDatabase());
 
-void (async () => {
-  try {
-    fallbackEvents = await loadCsvFallback();
-  } catch (error) {
-    console.warn("Demo CSV preload failed:", error);
+/**
+ * "Refresh events" re-runs whatever produced the current view.
+ *
+ * It used to re-render `currentEvents` and re-read the badge, which is why it never
+ * produced anything new — the array it drew from was the one already on screen. What the
+ * button is actually asking for is another go: a fresh Surprise pick, or the same vibe
+ * planned again, in both cases told which events are already showing so the server can
+ * pick past them.
+ *
+ * With no view yet there is nothing to re-run, so it falls back to the old behaviour of
+ * re-reading the badge and re-rendering the empty state.
+ */
+async function refreshEvents(): Promise<void> {
+  // The badge reports what the database holds rather than what the view shows, and a
+  // `npm run refresh` finishing while this page is open is exactly the case it exists
+  // to surface. Worth re-reading whichever branch below runs.
+  void loadEventsBadge();
+
+  if (!lastView) {
+    renderEventList();
+    showToast("Nothing to refresh yet — plan a weekend or try Surprise me.");
+    return;
   }
 
-  try {
-    if (supabase) {
-      plansCache = await fetchRecentPlans();
-      if (!currentPlan && plansCache[0]) currentPlan = plansCache[0];
-    }
-  } catch (error) {
-    console.warn("Database preload failed:", error);
+  const showing = currentEvents.map((event) => event.id);
+
+  if (lastView.kind === "surprise") {
+    await surpriseMe("A fresh set of quests.", showing);
+  } else {
+    await generatePlan(lastView.prompt, showing);
   }
-})();
+
+  showToast(currentEvents.length ? "Events refreshed." : "No events to show yet.");
+}
+
+refreshButton.addEventListener("click", () => {
+  void refreshEvents();
+});
+
+void loadEventsBadge();
